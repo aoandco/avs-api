@@ -8,6 +8,8 @@ const ClientSchema = new mongoose.Schema({
   password: { type: String, required: true },
   isVerified: { type: Boolean, default: false },
   emailOTP: { type: String },
+  apiKeyHash: { type: String, select: false },
+  apiKeyCreatedAt: Date,
   otpExpiresAt: { type: Date },
   linkExpiresAt:{ type: Date },
 }, { timestamps: true });

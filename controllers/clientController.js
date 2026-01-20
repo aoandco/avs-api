@@ -11,6 +11,36 @@ const Complaint = require("../model/Complaint");
 const Notification = require("../model/Notification");
 const mongoose = require("mongoose");
 const mime = require("mime-types")
+const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
+
+const generateClientApiKey = async (req, res) => {
+  try {
+    const clientId = req.user.id; // from JWT middleware
+
+    const client = await Client.findById(clientId);
+    if (!client) {
+      return res.status(404).json({ success: false, message: "Client not found" });
+    }
+
+    const apiKey = generateApiKey();
+    const hashedKey = hashApiKey(apiKey);
+
+    client.apiKeyHash = hashedKey;
+    client.apiKeyCreatedAt = new Date();
+    await client.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "API key generated successfully",
+      data: {
+        apiKey, 
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 
 const updateClientProfile = async (req, res) => {
   try {
@@ -632,6 +662,7 @@ const getAnalytics = async (req, res) => {
 };
 
 module.exports = {
+  generateClientApiKey,
   updateClientProfile,
   uploadTasksFromExcel,
   submitComplaint,
