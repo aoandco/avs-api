@@ -1308,7 +1308,7 @@ const verifyTaskAddress = async (req, res) => {
 
 const updateClientIntegration = async (req, res) => {
   try {
-    const clientId = new mongoose.Types.ObjectId(req.params.id);
+    const clientId = new mongoose.Types.ObjectId(req.params.clientId);
 
     const {
       avsEndpoint,

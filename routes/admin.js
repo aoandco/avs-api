@@ -41,7 +41,7 @@ router.post("/reject-task/:taskId", authenticate,authorizeAdmin, rejectTask);
 router.get("/task-analytics", authenticate,authorizeAdmin, getAnalytics);
 router.post("/verify-task-address/:taskId", authenticate,authorizeAdmin, verifyTaskAddress);
 
-router.post("/client/:id/integration",authenticate,updateClientIntegration);
+router.post("/client/integration/:clientId",authenticate,updateClientIntegration);
 
 
 module.exports = router;
