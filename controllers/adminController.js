@@ -13,6 +13,7 @@ const cloudinary = require("../config/cloudinary");
 const sendEmail = require("../util/sendEmail"); 
 const { generateTaskPDF, uploadPDFToCloudinary } = require("../service/pdfService")
 const axios = require("axios");
+const {pushTaskResultToClient} = require("../util/pushTaskResult")
 
 const listTasks = async (req, res) => {
   try {
@@ -949,6 +950,14 @@ const approveTaskReport = async (req, res) => {
 
         task.reportIsApproved = true;
         await task.save();
+
+        if (task.clientId.integration?.integrationEnabled) {
+          await pushTaskResultToClient(
+            task,
+            await Client.findById(task.clientId)
+          );
+        }
+
         results.approved.push(id);
       } catch (err) {
         console.error(`Failed to approve report for task ${id}:`, err);
@@ -971,7 +980,90 @@ const approveTaskReport = async (req, res) => {
   }
 };
 
+
+
 const rejectTask = async (req, res) => {
+  try {
+    const taskId = new mongoose.Types.ObjectId(req.params.taskId);
+    const { comments } = req.body;
+
+    if (!comments || typeof comments !== "string" || comments.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason (comments) is required.",
+      });
+    }
+
+    const task = await Task.findById(taskId);
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: "Task not found.",
+      });
+    }
+
+    task.status = "incomplete";
+    task.visitDate = null;
+    task.taskSubmissionDate = null;
+
+   task.feedback = {
+      addressExistence: "No",
+      addressResidential: "N/A",
+      customerResident: "No",
+      customerKnown: "N/A",
+      metWith: "N/A",
+      nameOfPersonMet: "N/A",
+      easeOfLocation: "N/A",
+      comments,
+      additionalComments: "N/A",
+      relatioshipWithCustomer: "N/A", 
+      customerRelationshipWithAddress: "N/A",
+      buildingColor: "N/A",
+      buildingType: "N/A",
+      areaProfile: "N/A",
+      landMark: "N/A",
+      receivedDate:null,
+      personMetOthers: "N/A",
+      visitFeedback: "N/A",
+      geoMapping: {
+        lat: null,
+        lng: null
+      },
+      geotaggedImages: [],
+      recordedAudio: "N/A",
+      recordedVideo: "N/A"
+    };
+
+    // Generate & upload PDF report
+    const pdfBuffer = await generateTaskPDF(task);
+    const reportUrl = await uploadPDFToCloudinary(pdfBuffer, `report-${task._id}`);
+
+    task.feedback.reportUrl = reportUrl;
+    task.reportIsApproved = true;
+
+    await task.save();
+
+    await pushTaskResultToClient(
+      task,
+      await Client.findById(task.clientId)
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Task rejected and report approved successfully.",
+    });
+
+  } catch (err) {
+    console.error("Report approval error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+const autoRejectTask = async (req, res) => {
   try {
     const taskId = new mongoose.Types.ObjectId(req.params.taskId);
     const { comments } = req.body;
@@ -1214,6 +1306,54 @@ const verifyTaskAddress = async (req, res) => {
 };
 
 
+const updateClientIntegration = async (req, res) => {
+  try {
+    const clientId = new mongoose.Types.ObjectId(req.params.id);
+
+    const {
+      avsEndpoint,
+      subscriptionKey,
+      vendorExternalId,
+      integrationEnabled
+    } = req.body;
+
+    if (!avsEndpoint || !subscriptionKey || !vendorExternalId) {
+      return res.status(400).json({
+        success: false,
+        message: "avsEndpoint, subscriptionKey and vendorExternalId are required"
+      });
+    }
+
+    const client = await Client.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found"
+      });
+    }
+
+    client.integration = {
+      avsEndpoint,
+      subscriptionKey,
+      vendorExternalId,
+      integrationEnabled: Boolean(integrationEnabled)
+    };
+
+    await client.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Client AVS integration configured successfully"
+    });
+
+  } catch (err) {
+    console.error("Integration config error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
 
 
 
@@ -1237,4 +1377,5 @@ module.exports = {
   rejectTask,
   getAnalytics,
   verifyTaskAddress,
+  updateClientIntegration
 };

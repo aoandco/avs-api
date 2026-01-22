@@ -19,7 +19,8 @@ const {
      approveTaskReport,
      getTaskSummaryByMonth,
      getClientMonthlySummary,
-     verifyTaskAddress
+     verifyTaskAddress,
+     updateClientIntegration
     } = require("../controllers/adminController");
 
 router.get("/tasks", authenticate, authorizeAdmin, listTasks);
@@ -39,5 +40,8 @@ router.post("/approve-report", authenticate,authorizeAdmin, approveTaskReport);
 router.post("/reject-task/:taskId", authenticate,authorizeAdmin, rejectTask);
 router.get("/task-analytics", authenticate,authorizeAdmin, getAnalytics);
 router.post("/verify-task-address/:taskId", authenticate,authorizeAdmin, verifyTaskAddress);
+
+router.post("/client/:id/integration",authenticate,updateClientIntegration);
+
 
 module.exports = router;

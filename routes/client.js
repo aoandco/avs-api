@@ -12,7 +12,8 @@ const {
      getDashboardStats,
      getAllUploads,
      getAnalytics,
-     generateClientApiKey
+     generateClientApiKey,
+     submitAddressVerification
     } = require("../controllers/clientController");
 
 
@@ -25,5 +26,11 @@ router.get("/notifications", verifyApiKey, getAllNotifications);
 router.get("/dashboard-stats", verifyApiKey, getDashboardStats);
 router.get("/task-uploads", verifyApiKey, getAllUploads);
 router.get("/task-analytics", verifyApiKey, getAnalytics);
+
+router.post("/address-verification/submit",
+  verifyApiKey,
+  submitAddressVerification
+);
+
 
 module.exports = router;

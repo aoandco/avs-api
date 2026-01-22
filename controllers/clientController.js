@@ -661,6 +661,71 @@ const getAnalytics = async (req, res) => {
   }
 };
 
+
+
+const submitAddressVerification = async (req, res) => {
+  try {
+    const { addressVerificationResponses } = req.body;
+
+    if (!Array.isArray(addressVerificationResponses) || !addressVerificationResponses.length) {
+      return res.status(400).json({
+        success: false,
+        message: "addressVerificationResponses is required"
+      });
+    }
+
+    const tasks = [];
+
+    for (const item of addressVerificationResponses) {
+    const exists = await Task.findOne({ activityId: item.activityId });
+
+    if (exists) {
+      results.duplicates.push(item.activityId);
+      continue;
+    }
+
+    const address = item.address;
+
+    tasks.push({
+      clientId: req.client._id,
+      activityId: item.activityId,
+      customerName: item.customerName,
+
+      address,
+
+      verificationAddress: [
+        address.street,
+        address.area,
+        address.city,
+        address.state,
+        address.country
+      ]
+        .filter(Boolean)
+        .join(", "),
+
+      status: "pending"
+    });
+
+  }
+
+    await Task.insertMany(tasks, { ordered: false });
+
+    return res.status(200).json({
+      status: "success",
+      message: "AVR request submitted successfully",
+      requestId: tasks.map(t => t.activityId)
+    });
+
+  } catch (err) {
+    console.error("AVS ingestion error:", err);
+    return res.status(500).json({
+      status: "error",
+      message: err.message
+    });
+  }
+};
+
+
 module.exports = {
   generateClientApiKey,
   updateClientProfile,
@@ -671,4 +736,6 @@ module.exports = {
   getDashboardStats,
   getAllUploads,
   getAnalytics,
+
+  submitAddressVerification
 };

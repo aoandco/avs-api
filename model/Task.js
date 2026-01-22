@@ -1,5 +1,18 @@
 const mongoose = require("mongoose");
 
+const addressSchema = new mongoose.Schema(
+  {
+    street: { type: String, required: true },
+    area: { type: String },
+    city: { type: String, required: true },
+    state: { type: String, required: true },
+    country: { type: String, default: "Nigeria" },
+    landmark: { type: String },
+    postalCode: { type: String }
+  },
+  { _id: false }
+);
+
 const taskSchema = new mongoose.Schema({
   clientId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -20,6 +33,12 @@ const taskSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+
+   address: {
+    type: addressSchema,
+    required: true
+  },
+  
   verificationAddress: {
     type: String,
     required: true

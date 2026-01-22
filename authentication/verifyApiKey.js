@@ -3,15 +3,7 @@ const Client = require("../model/Client");
 
 module.exports = async function verifyApiKey(req, res, next) {
   try {
-    // const authHeader = req.headers.authorization;
-
-    // if (!authHeader || !authHeader.startsWith("ApiKey ")) {
-    //   return res.status(401).json({
-    //     success: false,
-    //     message: "Missing or invalid API key",
-    //   });
-    // }
-
+   
     const apiKey = req.headers["x-api-key"];
 
     const hashedKey = crypto.createHash("sha256").update(apiKey).digest("hex");
