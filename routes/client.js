@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const {authenticate} = require("../authentication/auth");
-const verifyApiKey = require("../authentication/verifyApiKey");
+const authenticateOrVerifyApiKey = require("../authentication/authenticateOrVerifyApiKey");
 const {upload, uploadExcel} = require("../util/multer");
 const { 
      updateClientProfile,
@@ -18,17 +18,17 @@ const {
 
 
 router.post("/api-key", authenticate, generateClientApiKey);
-router.post("/update-profile", verifyApiKey, upload.single("profileImage"), updateClientProfile);
-router.post("/upload-tasks", verifyApiKey, uploadExcel, uploadTasksFromExcel);
-router.post("/submit-complaint", verifyApiKey, submitComplaint);
-router.get("/complaints", verifyApiKey,fetchComplaints);
-router.get("/notifications", verifyApiKey, getAllNotifications);
-router.get("/dashboard-stats", verifyApiKey, getDashboardStats);
-router.get("/task-uploads", verifyApiKey, getAllUploads);
-router.get("/task-analytics", verifyApiKey, getAnalytics);
+router.post("/update-profile", authenticateOrVerifyApiKey, upload.single("profileImage"), updateClientProfile);
+router.post("/upload-tasks", authenticateOrVerifyApiKey, uploadExcel, uploadTasksFromExcel);
+router.post("/submit-complaint", authenticateOrVerifyApiKey, submitComplaint);
+router.get("/complaints", authenticateOrVerifyApiKey, fetchComplaints);
+router.get("/notifications", authenticateOrVerifyApiKey, getAllNotifications);
+router.get("/dashboard-stats", authenticateOrVerifyApiKey, getDashboardStats);
+router.get("/task-uploads", authenticateOrVerifyApiKey, getAllUploads);
+router.get("/task-analytics", authenticateOrVerifyApiKey, getAnalytics);
 
 router.post("/address-verification/submit",
-  verifyApiKey,
+  authenticateOrVerifyApiKey,
   submitAddressVerification
 );
 
