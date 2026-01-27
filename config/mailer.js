@@ -18,12 +18,12 @@ const sendWithFallback = async (mailOptions) => {
     console.log("📨 Trying Resend first...");
 
     const response = await resend.emails.send({
-      from: `Aoco <${process.env.GMAIL_USER}>`, 
+      from: `Aoco <${process.env.RESEND_ONBOARDING_EMAIL}>`, 
       // You can use your Gmail until you add a domain in Resend
       to: mailOptions.to,
       subject: mailOptions.subject,
       html: mailOptions.html,
-      reply_to: process.env.GMAIL_USER,
+      reply_to: process.env.RESEND_ONBOARDING_EMAIL,
     });
 
     console.log("✅ Resend sent:", response.data?.id);

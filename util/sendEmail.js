@@ -56,6 +56,7 @@ const sendVerificationLink = async (email, fullName, verificationLink)=>{
     html: bayogEmailWrapper(body)
   }
   await sendWithFallback(mailOptions);
+  console.log("I am done sending email")
   return {linkExpiry}
 }
 
