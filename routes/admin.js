@@ -20,7 +20,8 @@ const {
      getTaskSummaryByMonth,
      getClientMonthlySummary,
      verifyTaskAddress,
-     updateClientIntegration
+     updateClientIntegration,
+     generateClientApiKeyByAdmin
     } = require("../controllers/adminController");
 
 router.get("/tasks", authenticate, authorizeAdmin, listTasks);
@@ -42,6 +43,7 @@ router.get("/task-analytics", authenticate,authorizeAdmin, getAnalytics);
 router.post("/verify-task-address/:taskId", authenticate,authorizeAdmin, verifyTaskAddress);
 
 router.post("/client/integration/:clientId",authenticate,updateClientIntegration);
+router.post("/client/generate-api-key/:clientId", generateClientApiKeyByAdmin);
 
 
 module.exports = router;

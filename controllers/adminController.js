@@ -14,6 +14,7 @@ const sendEmail = require("../util/sendEmail");
 const { generateTaskPDF, uploadPDFToCloudinary } = require("../service/pdfService")
 const axios = require("axios");
 const {pushTaskResultToClient} = require("../util/pushTaskResult")
+const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
 
 const listTasks = async (req, res) => {
   try {
@@ -1355,6 +1356,56 @@ const updateClientIntegration = async (req, res) => {
   }
 };
 
+const generateClientApiKeyByAdmin = async (req, res) => {
+  try {
+    const { clientId } = req.params;
+
+    // Validate clientId
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid client ID format",
+      });
+    }
+
+    // Find the client
+    const client = await Client.findById(clientId);
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found",
+      });
+    }
+
+    // Generate API key
+    const apiKey = generateApiKey();
+    const hashedKey = hashApiKey(apiKey);
+
+    // Update client with new API key
+    client.apiKeyHash = hashedKey;
+    client.apiKeyCreatedAt = new Date();
+    await client.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "API key generated successfully for client",
+      data: {
+        clientId: client._id,
+        clientEmail: client.email,
+        companyName: client.companyName,
+        apiKey,
+        apiKeyCreatedAt: client.apiKeyCreatedAt,
+      },
+    });
+  } catch (err) {
+    console.error("Generate client API key error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
 
 
 
@@ -1377,5 +1428,6 @@ module.exports = {
   rejectTask,
   getAnalytics,
   verifyTaskAddress,
-  updateClientIntegration
+  updateClientIntegration,
+  generateClientApiKeyByAdmin
 };
