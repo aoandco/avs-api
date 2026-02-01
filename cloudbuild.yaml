@@ -3,7 +3,7 @@
   args:
     [
       'run','deploy','avs-api',
-      '--image','gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA',
+      '--image','europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/avs-api/avs-api:$COMMIT_SHA',
       '--region','europe-west1',
       '--platform','managed',
       '--allow-unauthenticated',
