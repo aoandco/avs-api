@@ -1,0 +1,31 @@
+steps:
+  # Build container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA', '.']
+
+  # Push image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run','deploy','api-service',
+        '--image','gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA',
+        '--region','europe-west1',
+        '--platform','managed',
+        '--allow-unauthenticated',
+
+        # Normal env variables
+        '--set-env-vars',
+        'NODE_ENV=production,BASE_URL=https://aoandco.tech,RESEND_ONBOARDING_EMAIL=no-reply@aoandco.tech,SECURITY_QUESTION=BAYOGAPP',
+
+        # Secrets from Secret Manager
+        '--set-secrets',
+        'MONGO_URI=MONGO_URI:latest,JWT_SECRET=JWT_SECRET:latest,CLOUDINARY_API_KEY=CLOUDINARY_API_KEY:latest,CLOUDINARY_API_SECRET=CLOUDINARY_API_SECRET:latest,SENDGRID_API_KEY=SENDGRID_API_KEY:latest,RESEND_API_KEY=RESEND_API_KEY:latest,GMAIL_APP_PASS=GMAIL_APP_PASS:latest'
+      ]
+
+images:
+  - 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA'

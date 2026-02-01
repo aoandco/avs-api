@@ -3,11 +3,10 @@ const connectDB = require("./config/db");
 const app = require("./app");
 const {startOverDueTaskJob} = require("./cron/checkOverdueTasks")
 
-const PORT = process.env.PORT || 5000;
-
 connectDB()
 startOverDueTaskJob()
 
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
