@@ -3,7 +3,7 @@ const { Resend } = require("resend");
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Gmail fallback transporter
+// Gmail PRIMARY transporter
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -12,43 +12,159 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Send mail with fallback (Resend → Gmail)
-const sendWithFallback = async (mailOptions) => {
+// Prevent a provider from hanging the request
+const withTimeout = (promise, ms = 8000) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Provider timeout")), ms)
+    ),
+  ]);
+
+const sendWithFallback = async ({
+  to,
+  subject,
+  html,
+  text,
+  attachments = [],
+}) => {
+  const result = {
+    success: false,
+    provider: null,
+    id: null,
+  };
+
+  // ---------- 1️⃣ TRY GMAIL FIRST ----------
   try {
-    console.log("📨 Trying Resend first...");
+    console.log("📨 Attempting Gmail delivery...");
 
-    const response = await resend.emails.send({
-      from: `Aoco <${process.env.RESEND_ONBOARDING_EMAIL}>`, 
-      // You can use your Gmail until you add a domain in Resend
-      to: mailOptions.to,
-      subject: mailOptions.subject,
-      html: mailOptions.html,
-      reply_to: process.env.RESEND_ONBOARDING_EMAIL,
-    });
-
-    console.log("✅ Resend sent:", response.data?.id);
-    return { provider: "resend", id: response.data?.id };
-
-  } catch (err) {
-    console.error("❌ Resend failed, falling back to Gmail:", err.message);
-
-    try {
-      const info = await transporter.sendMail({
-        ...mailOptions,
+    const gmailInfo = await withTimeout(
+      transporter.sendMail({
         from: `"Aoco" <${process.env.GMAIL_USER}>`,
-      });
+        to,
+        subject,
+        html,
+        text,
+        attachments,
+      })
+    );
 
-      console.log("✅ Gmail sent:", info.messageId);
-      return { provider: "gmail", messageId: info.messageId };
+    result.success = true;
+    result.provider = "gmail";
+    result.id = gmailInfo.messageId;
 
-    } catch (err2) {
-      console.error("❌ Gmail also failed:", err2.message);
-      throw new Error("All email providers failed.");
-    }
+    console.log("✅ Gmail success:", result.id);
+    return result;
+
+  } catch (gmailError) {
+    console.error("⚠️ Gmail failed:", gmailError.message);
+  }
+
+  // ---------- 2️⃣ FALL BACK TO RESEND ----------
+  try {
+    console.log("📨 Attempting Resend fallback...");
+
+    const resendResponse = await withTimeout(
+      resend.emails.send({
+        from: `Aoco <${process.env.RESEND_ONBOARDING_EMAIL}>`,
+        to,
+        subject,
+        html,
+        text,
+        attachments,
+        reply_to: process.env.RESEND_ONBOARDING_EMAIL,
+      })
+    );
+
+    result.success = true;
+    result.provider = "resend";
+    result.id = resendResponse.data?.id;
+
+    console.log("✅ Resend success:", result.id);
+    return result;
+
+  } catch (resendError) {
+    console.error("❌ Resend fallback failed:", resendError.message);
+    throw new Error("All email providers failed");
   }
 };
 
 module.exports = { sendWithFallback };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// const nodemailer = require("nodemailer");
+// const { Resend } = require("resend");
+
+// const resend = new Resend(process.env.RESEND_API_KEY);
+
+// // Gmail fallback transporter
+// const transporter = nodemailer.createTransport({
+//   service: "gmail",
+//   auth: {
+//     user: process.env.GMAIL_USER,
+//     pass: process.env.GMAIL_APP_PASS,
+//   },
+// });
+
+// // Send mail with fallback (Resend → Gmail)
+// const sendWithFallback = async (mailOptions) => {
+//   try {
+//     console.log("📨 Trying Resend first...");
+
+//     const response = await resend.emails.send({
+//       from: `Aoco <${process.env.RESEND_ONBOARDING_EMAIL}>`, 
+//       // You can use your Gmail until you add a domain in Resend
+//       to: mailOptions.to,
+//       subject: mailOptions.subject,
+//       html: mailOptions.html,
+//       reply_to: process.env.RESEND_ONBOARDING_EMAIL,
+//     });
+
+//     console.log("✅ Resend sent:", response.data?.id);
+//     return { provider: "resend", id: response.data?.id };
+
+//   } catch (err) {
+//     console.error("❌ Resend failed, falling back to Gmail:", err.message);
+
+//     try {
+//       const info = await transporter.sendMail({
+//         ...mailOptions,
+//         from: `"Aoco" <${process.env.GMAIL_USER}>`,
+//       });
+
+//       console.log("✅ Gmail sent:", info.messageId);
+//       return { provider: "gmail", messageId: info.messageId };
+
+//     } catch (err2) {
+//       console.error("❌ Gmail also failed:", err2.message);
+//       throw new Error("All email providers failed.");
+//     }
+//   }
+// };
+
+// module.exports = { sendWithFallback };
 
 
 
