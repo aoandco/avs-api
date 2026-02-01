@@ -1,46 +1,25 @@
 steps:
-  # 1️⃣ Build container image
+  # Build container image
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      [
-        'build',
-        '-t',
-        'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA',
-        '.'
-      ]
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA', '.']
 
-  # 2️⃣ Push image
+  # Push image
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      [
-        'push',
-        'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA'
-      ]
+    args: ['push', 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA']
 
-  # 3️⃣ Deploy to Cloud Run with Secret Manager env vars
+  # Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
-      [
-        'run', 'deploy', 'avs-api',
-        '--image', 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA',
-        '--region', 'europe-west1',
-        '--platform', 'managed',
-        '--allow-unauthenticated',
-        '--port', '8080',
-        '--set-secrets',
-        'MONGO_URI=MONGO_URI:latest',
-        'BASE_URL=BASE_URL:latest',
-        'JWT_SECRET=JWT_SECRET:latest',
-        'CLOUDINARY_CLOUD_NAME=CLOUDINARY_CLOUD_NAME:latest',
-        'CLOUDINARY_API_KEY=CLOUDINARY_API_KEY:latest',
-        'CLOUDINARY_API_SECRET=CLOUDINARY_API_SECRET:latest',
-        'GMAIL_USER=GMAIL_USER:latest',
-        'GMAIL_APP_PASS=GMAIL_APP_PASS:latest',
-        'RESEND_API_KEY=RESEND_API_KEY:latest',
-        'SECURITY_QUESTION=SECURITY_QUESTION:latest',
-        'RESEND_ONBOARDING_EMAIL=RESEND_ONBOARDING_EMAIL:latest'
-      ]
+      - run
+      - deploy
+      - avs-api
+      - --image=gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA
+      - --region=europe-west1
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8080
+      - --set-secrets=MONGO_URI=MONGO_URI:latest,BASE_URL=BASE_URL:latest,JWT_SECRET=JWT_SECRET:latest,CLOUDINARY_CLOUD_NAME=CLOUDINARY_CLOUD_NAME:latest,CLOUDINARY_API_KEY=CLOUDINARY_API_KEY:latest,CLOUDINARY_API_SECRET=CLOUDINARY_API_SECRET:latest,GMAIL_USER=GMAIL_USER:latest,GMAIL_APP_PASS=GMAIL_APP_PASS:latest,RESEND_API_KEY=RESEND_API_KEY:latest,SECURITY_QUESTION=SECURITY_QUESTION:latest,RESEND_ONBOARDING_EMAIL=RESEND_ONBOARDING_EMAIL:latest
 
 images:
   - 'gcr.io/$PROJECT_ID/api-service:$COMMIT_SHA'
