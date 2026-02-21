@@ -158,9 +158,19 @@ const uploadTasksFromExcel = async (req, res) => {
         continue;
 
       tasks.push({
-        clientId,
-        ...mapped,
-      });
+      clientId,
+      customerName: mapped.customerName,
+      activityId: mapped.activityId,
+      verificationAddress: mapped.verificationAddress,
+      state: mapped.state,
+      city: mapped.city,
+      address: {
+        street: mapped.verificationAddress,
+        city: mapped.city,
+        state: mapped.state,
+        country: "Nigeria"
+      }
+    });
     }
 
     // 4. Save to DB

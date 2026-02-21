@@ -12,7 +12,30 @@ const adminRoutes = require("./routes/admin");
 
 const app = express();
 
-app.use(cors())
+const defaultOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:8080",
+  "https://aoandco.tech",
+  "https://www.aoandco.tech",
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+      : defaultOrigins;
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) return callback(null, true);
+    if (!process.env.CORS_ORIGIN) return callback(null, true);
+    callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
 // app.use(morgan("dev"));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
