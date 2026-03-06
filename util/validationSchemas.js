@@ -72,6 +72,31 @@ const createTaskSchema = Joi.object({
   verificationAddress: Joi.string().required()
 });
 
+const addressVerificationAddressSchema = Joi.object({
+  street: Joi.string().required(),
+  area: Joi.string().optional(),
+  city: Joi.string().required(),
+  state: Joi.string().required(),
+  country: Joi.string().optional(),
+  landmark: Joi.string().optional(),
+  postalCode: Joi.string().optional(),
+  fullAddress: Joi.string().optional(),
+  additionalInformation: Joi.string().optional()
+});
+
+const addressVerificationRequestSchema = Joi.object({
+  addressVerificationResponses: Joi.array()
+    .items(
+      Joi.object({
+        activityId: Joi.string().required(),
+        customerName: Joi.string().required(),
+        address: addressVerificationAddressSchema.required()
+      })
+    )
+    .min(1)
+    .required()
+});
+
 const submitTaskSchema = Joi.object({
   addressExistence: Joi.string().valid("Yes", "No").required(),
   addressResidential: Joi.string().valid("Yes", "No").required(),
@@ -115,5 +140,6 @@ module.exports = {
   updateClientProfileSchema,
   
   createTaskSchema,
-  submitTaskSchema
+  submitTaskSchema,
+  addressVerificationRequestSchema
 };

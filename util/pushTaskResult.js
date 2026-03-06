@@ -12,13 +12,27 @@ async function pushTaskResultToClient(task, client) {
 
   if (!client?.integration?.integrationEnabled) return;
 
+  const addressPayload = task.address
+    ? {
+        street: task.address.street,
+        area: task.address.area,
+        city: task.address.city,
+        state: task.address.state,
+        country: task.address.country,
+        landmark: task.address.landmark,
+        postalCode: task.address.postalCode,
+        fullAddress: task.address.fullAddress,
+        additionalInformation: task.address.additionalInformation
+      }
+    : task.verificationAddress;
+
   const payload = {
     vendorId: client.integration.vendorExternalId,
     addressVerificationResponses: [
       {
         activityId: task.activityId,
         customerName: task.customerName,
-        address: task.verificationAddress,
+        address: addressPayload,
         visitDate: task.visitDate,
         addressExists: task.feedback.addressExistence === "Yes",
         isResidentialAddress: task.feedback.addressResidential === "Yes",

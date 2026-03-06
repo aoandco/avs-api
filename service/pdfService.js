@@ -54,8 +54,14 @@ const generateTaskPDF = async (task) => {
         .text(`Client: ${task.clientId?.companyName || "N/A"}`)
         .text(`Client Email: ${task.clientId?.email || "N/A"}`)
         .text(`Customer Name: ${task.customerName}`)
-        .text(`Verification Address: ${task.verificationAddress}`)
-        .text(`Visit Date: ${new Date(task.visitDate).toLocaleString()}`);
+        .text(`Verification Address: ${task.verificationAddress}`);
+      if (task.address?.fullAddress) {
+        doc.text(`Full Address: ${task.address.fullAddress}`);
+      }
+      if (task.address?.additionalInformation) {
+        doc.text(`Additional Information: ${task.address.additionalInformation}`);
+      }
+      doc.text(`Visit Date: ${new Date(task.visitDate).toLocaleString()}`);
       doc.moveDown(1);
 
       //========Client Info

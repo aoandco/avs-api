@@ -8,7 +8,9 @@ const addressSchema = new mongoose.Schema(
     state: { type: String, required: true },
     country: { type: String, default: "Nigeria" },
     landmark: { type: String },
-    postalCode: { type: String }
+    postalCode: { type: String },
+    fullAddress: { type: String },
+    additionalInformation: { type: String }
   },
   { _id: false }
 );

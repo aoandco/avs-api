@@ -1,6 +1,6 @@
 const Client = require("../model/Client");
 const Task = require("../model/Task");
-const { createTaskSchema } = require("../util/validationSchemas");
+const { createTaskSchema, addressVerificationRequestSchema } = require("../util/validationSchemas");
 const { v4: uuidv4 } = require("uuid");
 const cloudinary = require("../config/cloudinary");
 const { updateClientProfileSchema } = require("../util/validationSchemas");
@@ -356,6 +356,7 @@ const getDashboardStats = async (req, res) => {
           activityId 
           customerName 
           verificationAddress 
+          address 
           state 
           feedback.addressExistence 
           feedback.addressResidential 
@@ -450,7 +451,7 @@ const getDashboardStats = async (req, res) => {
 
 
     const formattedTasks = reportTasks.map(task => {
-  const { activityId, customerName, verificationAddress, state, feedback = {} } = task;
+  const { activityId, customerName, verificationAddress, address, state, feedback = {} } = task;
 
   const {
     addressExistence,
@@ -488,6 +489,8 @@ const getDashboardStats = async (req, res) => {
     activityId,
     customerName,
     verificationAddress,
+    fullAddress: address?.fullAddress,
+    additionalInformation: address?.additionalInformation,
     state,
     addressExistence,
     addressResidential,
@@ -675,55 +678,71 @@ const getAnalytics = async (req, res) => {
 
 const submitAddressVerification = async (req, res) => {
   try {
-    const { addressVerificationResponses } = req.body;
-
-    if (!Array.isArray(addressVerificationResponses) || !addressVerificationResponses.length) {
+    const { error, value } = addressVerificationRequestSchema.validate(req.body, { abortEarly: false });
+    if (error) {
       return res.status(400).json({
         success: false,
-        message: "addressVerificationResponses is required"
+        message: "Validation failed",
+        errors: error.details.map((d) => d.message)
+      });
+    }
+    const { addressVerificationResponses } = value;
+
+    const tasks = [];
+    const duplicates = [];
+
+    for (const item of addressVerificationResponses) {
+      const exists = await Task.findOne({ activityId: item.activityId });
+
+      if (exists) {
+        duplicates.push(item.activityId);
+        continue;
+      }
+
+      const address = item.address || {};
+      const verificationAddress =
+        address.fullAddress ||
+        [
+          address.street,
+          address.area,
+          address.city,
+          address.state,
+          address.country
+        ]
+          .filter(Boolean)
+          .join(", ");
+
+      tasks.push({
+        clientId: req.user.id,
+        activityId: item.activityId,
+        customerName: item.customerName,
+        address: {
+          street: address.street,
+          area: address.area,
+          city: address.city,
+          state: address.state,
+          country: address.country || "Nigeria",
+          landmark: address.landmark,
+          postalCode: address.postalCode,
+          fullAddress: address.fullAddress,
+          additionalInformation: address.additionalInformation
+        },
+        verificationAddress,
+        status: "pending"
       });
     }
 
-    const tasks = [];
-
-    for (const item of addressVerificationResponses) {
-    const exists = await Task.findOne({ activityId: item.activityId });
-
-    if (exists) {
-      results.duplicates.push(item.activityId);
-      continue;
+    if (tasks.length) {
+      await Task.insertMany(tasks, { ordered: false });
     }
 
-    const address = item.address;
-
-    tasks.push({
-      clientId: req.client._id,
-      activityId: item.activityId,
-      customerName: item.customerName,
-
-      address,
-
-      verificationAddress: [
-        address.street,
-        address.area,
-        address.city,
-        address.state,
-        address.country
-      ]
-        .filter(Boolean)
-        .join(", "),
-
-      status: "pending"
-    });
-
-  }
-
-    await Task.insertMany(tasks, { ordered: false });
-
     return res.status(200).json({
-      status: "success",
+      success: true,
       message: "AVR request submitted successfully",
-      requestId: tasks.map(t => t.activityId)
+      data: {
+        created: tasks.map((t) => t.activityId),
+        duplicates: duplicates.length ? duplicates : undefined
+      }
     });
 
   } catch (err) {
