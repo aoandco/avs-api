@@ -76,7 +76,87 @@ Send an object with a single key `addressVerificationResponses`, which is an **a
 
 ---
 
-## 2. Where fullAddress & additionalInformation Appear (Responses)
+## 2. List Tasks (Admin) and Get Tasks (Agent) – Process fullAddress & additionalInformation
+
+The frontend **must** process the two new fields when rendering task lists from these APIs. Each task in the response includes an `address` object that may contain **`fullAddress`** and **`additionalInformation`**.
+
+### Admin – List tasks
+
+| | |
+|--|--|
+| **API** | List tasks (Admin) |
+| **Method** | `GET` |
+| **Endpoint** | `/v1/admin/tasks` |
+| **Auth** | Bearer token (Admin) |
+
+**Query params (optional):** `statusFilter`, `state`, `startDate`, `endDate`, `search`
+
+**Response:** `{ success, message, totalTasks, data: tasks[] }`  
+Each item in `data` is a task object. For each task:
+
+- Read **`task.address.fullAddress`** when present and use it for “full address” display (e.g. in tables or detail views).
+- Read **`task.address.additionalInformation`** when present and show it as extra notes (e.g. “House with Green Color”).
+
+If `task.address.fullAddress` is missing, fall back to **`task.verificationAddress`** for the main address string.
+
+---
+
+### Agent – Get my tasks
+
+| | |
+|--|--|
+| **API** | Get tasks (Agent) |
+| **Method** | `GET` |
+| **Endpoint** | `/v1/agent/my-tasks` |
+| **Auth** | Bearer token (Agent) |
+
+**Query params (optional):** `statusFilter`, `page`, `limit`
+
+**Response:** `{ success, message, currentPage, totalPages, totalTasks, data: tasks[] }`  
+Each item in `data` is a task object. For each task:
+
+- Read **`task.address.fullAddress`** when present and use it for “full address” display.
+- Read **`task.address.additionalInformation`** when present and show it as extra notes.
+
+If `task.address.fullAddress` is missing, fall back to **`task.verificationAddress`** for the main address string.
+
+---
+
+### Task shape (both APIs)
+
+Each task in `data` can look like:
+
+```json
+{
+  "_id": "...",
+  "activityId": "AVS-2024-000001",
+  "customerName": "John Doe",
+  "verificationAddress": "12 Adeola Odeku Street, Victoria Island, Lagos, Lagos, Nigeria",
+  "address": {
+    "street": "12 Adeola Odeku Street",
+    "area": "Victoria Island",
+    "city": "Lagos",
+    "state": "Lagos",
+    "country": "Nigeria",
+    "landmark": "Near Mega Plaza",
+    "postalCode": "101241",
+    "fullAddress": "45 , FCT 900288, Nigeria...",
+    "additionalInformation": "House with Green Color"
+  },
+  "state": "Lagos",
+  "city": "Lagos",
+  "status": "pending",
+  "clientId": { ... },
+  "agentId": { ... },
+  ...
+}
+```
+
+**Frontend action:** When rendering the list (table, cards, or detail view), display `task.address.fullAddress` when available, otherwise `task.verificationAddress`; and display `task.address.additionalInformation` when available.
+
+---
+
+## 3. Where fullAddress & additionalInformation Appear (Responses)
 
 The backend now stores and returns `fullAddress` and `additionalInformation` in these places so the frontend can display them consistently.
 
@@ -125,7 +205,7 @@ No frontend change is required for PDF generation; this is for consistency when 
 
 ---
 
-## 3. Frontend checklist for syncing with backend
+## 4. Frontend checklist for syncing with backend
 
 1. **Submit form / payload**
    - Add optional fields **`fullAddress`** and **`additionalInformation`** to the address object in `addressVerificationResponses`.
@@ -134,6 +214,7 @@ No frontend change is required for PDF generation; this is for consistency when 
 2. **Display**
    - Where you show “verification address”, prefer **`fullAddress`** when present, else **`verificationAddress`**.
    - Where you show extra notes, use **`additionalInformation`**.
+   - **Admin list tasks** (`GET /v1/admin/tasks`) and **Agent get tasks** (`GET /v1/agent/my-tasks`): for each task in `data`, read `task.address.fullAddress` and `task.address.additionalInformation` and render them in the task list/detail UI.
 
 3. **Client webhook consumer**
    - If you have a consumer for the client result webhook, extend it to handle **`address.fullAddress`** and **`address.additionalInformation`**.
@@ -143,11 +224,13 @@ No frontend change is required for PDF generation; this is for consistency when 
 
 ---
 
-## 4. Summary
+## 5. Summary
 
 | Context | fullAddress | additionalInformation |
 |--------|-------------|------------------------|
 | **Submit request** (`address`) | Optional | Optional |
+| **Admin list tasks** `GET /v1/admin/tasks` | `task.address.fullAddress` | `task.address.additionalInformation` |
+| **Agent get tasks** `GET /v1/agent/my-tasks` | `task.address.fullAddress` | `task.address.additionalInformation` |
 | **Dashboard / report APIs** | Returned when stored | Returned when stored |
 | **Webhook payload** (`address`) | Included when stored | Included when stored |
 | **PDF report** | Printed when present | Printed when present |

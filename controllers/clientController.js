@@ -701,13 +701,15 @@ const submitAddressVerification = async (req, res) => {
 
       const address = item.address || {};
       const verificationAddress =
-        address.fullAddress ||
         [
           address.street,
           address.area,
           address.city,
+          address.landmark,
+          address.postalCode,
           address.state,
-          address.country
+          address.country,
+          
         ]
           .filter(Boolean)
           .join(", ");
