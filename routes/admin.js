@@ -15,6 +15,7 @@ const {
      deleteFileUpload,
      getAnalytics,
      deleteTask,
+     deleteAllTasks,
      rejectTask,
      approveTaskReport,
      getTaskSummaryByMonth,
@@ -37,6 +38,7 @@ router.post("/send-notifications", authenticate,authorizeAdmin, sendNotification
 router.post("/update-file-status/:fileId", authenticate,authorizeAdmin, updateFileStatus);
 router.post("/delete-file/:fileId", authenticate,authorizeAdmin, deleteFileUpload);
 router.post("/delete-task/:taskId", authenticate,authorizeAdmin, deleteTask);
+router.post("/tasks/all", authenticate, authorizeAdmin, deleteAllTasks);
 router.post("/approve-report", authenticate,authorizeAdmin, approveTaskReport);
 router.post("/reject-task/:taskId", authenticate,authorizeAdmin, rejectTask);
 router.get("/task-analytics", authenticate,authorizeAdmin, getAnalytics);

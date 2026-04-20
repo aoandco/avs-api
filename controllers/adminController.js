@@ -922,6 +922,24 @@ const deleteTask = async (req, res) => {
   }
 };
 
+const deleteAllTasks = async (req, res) => {
+  try {
+    const result = await Task.deleteMany({});
+
+    return res.status(200).json({
+      success: true,
+      message: "All tasks deleted successfully.",
+      deletedCount: result.deletedCount,
+    });
+  } catch (err) {
+    console.error("Delete all tasks error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
 const approveTaskReport = async (req, res) => {
   try {
     const { taskIds } = req.body; 
@@ -1423,7 +1441,8 @@ module.exports = {
   sendNotification,
   updateFileStatus,
   deleteFileUpload,
-  deleteTask ,
+  deleteTask,
+  deleteAllTasks,
   approveTaskReport,
   rejectTask,
   getAnalytics,
