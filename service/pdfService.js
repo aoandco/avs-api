@@ -25,7 +25,7 @@ const generateTaskPDF = async (task) => {
       const feedback = task.feedback || {};
       const agent = task.agentId || {};
       const logoURL = "https://res.cloudinary.com/dgeafv96s/image/upload/v1763104830/aoco_logo_h32ucb.jpg";
-      const localLogoPath = path.join(__dirname, "../assets/logo.png");
+      const localLogoPath = path.join(__dirname, "../assets/aoco_logo.jpeg");
 
       // === Load and place logo (cloud or local)
       const placeLogo = async () => {
