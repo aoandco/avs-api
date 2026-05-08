@@ -31,8 +31,8 @@ const listTasks = async (req, res) => {
     const statusMap = {
       pending: ["pending"],
       assigned: ["assigned"],
-      overDue: ["over-due"],
-      inComplete: ["incomplete"],
+      overdue: ["over-due"],
+      incomplete: ["incomplete"],
       completed: ["completed"],
       all: ["pending", "incomplete", "assigned", "completed", "over-due"],
     };
