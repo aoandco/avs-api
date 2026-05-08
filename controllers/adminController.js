@@ -537,15 +537,40 @@ const formattedResult = summaryArray.map((item) => ({
 const getDashboardStats = async (req, res) => {
   try {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const { start } = req.query;
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const normalizedStart = String(start || "").trim().toLowerCase();
+
+    let createdAtFilter = { createdAt: { $gte: defaultStart } };
+
+    if (normalizedStart) {
+      const isHistoryMode = ["all", "history"].includes(normalizedStart);
+
+      if (isHistoryMode) {
+        createdAtFilter = {};
+      } else {
+        const parsedStart = new Date(start);
+        if (Number.isNaN(parsedStart.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid "start" query value. Use a valid date, or "all"/"history".',
+          });
+        }
+        parsedStart.setHours(0, 0, 0, 0);
+        createdAtFilter = { createdAt: { $gte: parsedStart } };
+      }
+    }
+
+    const buildTaskFilter = (status) =>
+      status ? { ...createdAtFilter, status } : { ...createdAtFilter };
 
     const [totalTasks, assignedTasks, overdueTasks, pendingTasks, incompleteTasks, verifiedTasks, agentCount, taskFiles] = await Promise.all([
-      Task.countDocuments({ createdAt: { $gte: startOfMonth } }),
-      Task.countDocuments({status:"assigned" , createdAt: { $gte: startOfMonth }}),
-      Task.countDocuments({status:"over-due" , createdAt: { $gte: startOfMonth }}),
-      Task.countDocuments({ status:"pending", createdAt: { $gte: startOfMonth } }),
-      Task.countDocuments({ status:"incomplete", createdAt: { $gte: startOfMonth } }),
-      Task.countDocuments({ status:"completed", createdAt: { $gte: startOfMonth }}),
+      Task.countDocuments(buildTaskFilter()),
+      Task.countDocuments(buildTaskFilter("assigned")),
+      Task.countDocuments(buildTaskFilter("over-due")),
+      Task.countDocuments(buildTaskFilter("pending")),
+      Task.countDocuments(buildTaskFilter("incomplete")),
+      Task.countDocuments(buildTaskFilter("completed")),
       Agent.countDocuments(),
       TaskUpload
           .find()
