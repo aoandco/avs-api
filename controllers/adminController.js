@@ -19,25 +19,27 @@ const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
 const listTasks = async (req, res) => {
   try {
     const { statusFilter = "all", state, startDate, endDate, search } = req.query;
-
-    const validStatuses = ["assigned", "inProgress", "incomplete", "completed", "pending", "overDue", "all"];
-    if (!validStatuses.includes(statusFilter)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Use "assigned", "incomplete", "inProgress", "completed", "pending", "overDue", or "all"`,
-      });
-    }
+    const normalizedStatusFilter = String(statusFilter || "").trim().toLowerCase();
 
     const statusMap = {
       pending: ["pending"],
       assigned: ["assigned"],
-      overdue: ["over-due"],
+      inprogress: ["assigned"],
       incomplete: ["incomplete"],
       completed: ["completed"],
+      overdue: ["over-due"],
+      "over-due": ["over-due"],
       all: ["pending", "incomplete", "assigned", "completed", "over-due"],
     };
 
-    const allowedStatuses = statusMap[statusFilter] || statusMap["all"];
+    const allowedStatuses = statusMap[normalizedStatusFilter];
+    if (!allowedStatuses) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Invalid status. Use "assigned", "incomplete", "inProgress", "completed", "pending", "overdue", or "all"',
+      });
+    }
 
     // === Build Filter Object ===
     const filter = {
