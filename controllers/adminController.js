@@ -147,7 +147,13 @@ const listTasks = async (req, res) => {
 const assignTask = async (req, res) => {
   try {
     const { taskIds } = req.body; // array of task IDs
-    const agentId = new mongoose.Types.ObjectId(req.params.agentId);
+    const { agentId: rawAgentId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(rawAgentId)) {
+      return res.status(400).json({ success: false, message: "Invalid agent ID" });
+    }
+
+    const agentId = new mongoose.Types.ObjectId(rawAgentId);
 
     if (!Array.isArray(taskIds) || taskIds.length === 0) {
       return res.status(400).json({ success: false, message: "No task IDs provided" });
@@ -162,9 +168,15 @@ const assignTask = async (req, res) => {
     const taskSubmissionDeadline = new Date(now.getTime() + 48 * 60 * 60 * 1000); // 48 hours
 
     let assignedTasks = [];
+    let reassignedTasks = [];
     let skippedTasks = [];
 
     for (const id of taskIds) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        skippedTasks.push({ taskId: id, reason: "Invalid task ID format" });
+        continue;
+      }
+
       const taskObjectId = new mongoose.Types.ObjectId(id);
       const task = await Task.findById(taskObjectId);
 
@@ -173,10 +185,12 @@ const assignTask = async (req, res) => {
         continue;
       }
 
-      if (task.status !== "pending") {
-        skippedTasks.push({ taskId: id, reason: "Task already assigned or completed" });
-        continue;
-      }
+      // if (task.status === "completed") {
+      //   skippedTasks.push({ taskId: id, reason: "Completed tasks cannot be reassigned" });
+      //   continue;
+      // }
+
+      const wasAssignedBefore = task.status !== "pending" || task.agentId;
 
       task.agentId = agent._id;
       task.status = "assigned";
@@ -185,6 +199,9 @@ const assignTask = async (req, res) => {
       await task.save();
 
       assignedTasks.push(task);
+      if (wasAssignedBefore) {
+        reassignedTasks.push(task);
+      }
     }
 
     return res.status(200).json({
@@ -192,8 +209,10 @@ const assignTask = async (req, res) => {
       message: "Tasks assignment processed",
       data:{
         assigned: assignedTasks.length,
+        reassigned: reassignedTasks.length,
         skipped: skippedTasks.length,
         assignedTasks,
+        reassignedTasks,
         skippedTasks,
       }
     });
@@ -518,11 +537,12 @@ const getDashboardStats = async (req, res) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [totalTasks, assignedTasks, overdueTasks, pendingTasks, verifiedTasks, agentCount, taskFiles] = await Promise.all([
+    const [totalTasks, assignedTasks, overdueTasks, pendingTasks, incompleteTasks, verifiedTasks, agentCount, taskFiles] = await Promise.all([
       Task.countDocuments({ createdAt: { $gte: startOfMonth } }),
       Task.countDocuments({status:"assigned" , createdAt: { $gte: startOfMonth }}),
       Task.countDocuments({status:"over-due" , createdAt: { $gte: startOfMonth }}),
       Task.countDocuments({ status:"pending", createdAt: { $gte: startOfMonth } }),
+      Task.countDocuments({ status:"incomplete", createdAt: { $gte: startOfMonth } }),
       Task.countDocuments({ status:"completed", createdAt: { $gte: startOfMonth }}),
       Agent.countDocuments(),
       TaskUpload
@@ -538,6 +558,7 @@ const getDashboardStats = async (req, res) => {
         assignedTasks,
         overdueTasks,
         pendingTasks,
+        incompleteTasks,
         verifiedTasks,
         agentCount,
         taskFiles
