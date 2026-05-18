@@ -1018,11 +1018,27 @@ const approveTaskReport = async (req, res) => {
         task.reportIsApproved = true;
         await task.save();
 
-        if (task.clientId.integration?.integrationEnabled) {
-          await pushTaskResultToClient(
-            task,
-            await Client.findById(task.clientId)
-          );
+        const client = await Client.findById(task.clientId);
+        if (client?.integration?.integrationEnabled) {
+          console.log("[approveTaskReport] Pushing task result to client", {
+            taskId: id,
+            activityId: task.activityId,
+            clientId: client._id,
+            endpoint: client.integration.avsEndpoint,
+          });
+
+          const pushResult = await pushTaskResultToClient(task, client);
+          console.log("[approveTaskReport] pushTaskResultToClient response", {
+            taskId: id,
+            activityId: task.activityId,
+            pushResult,
+          });
+        } else {
+          console.log("[approveTaskReport] Skipping push — integration not enabled", {
+            taskId: id,
+            activityId: task.activityId,
+            clientId: task.clientId,
+          });
         }
 
         results.approved.push(id);

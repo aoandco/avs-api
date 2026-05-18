@@ -10,7 +10,9 @@ function mapVerificationStatus(task) {
 
 async function pushTaskResultToClient(task, client) {
 
-  if (!client?.integration?.integrationEnabled) return;
+  if (!client?.integration?.integrationEnabled) {
+    return { pushed: false, reason: "integration_disabled" };
+  }
 
   const addressPayload = task.address
     ? {
@@ -52,7 +54,7 @@ async function pushTaskResultToClient(task, client) {
     ]
   };
 
-  await axios.post(
+  const response = await axios.post(
     client.integration.avsEndpoint,
     payload,
     {
@@ -64,6 +66,13 @@ async function pushTaskResultToClient(task, client) {
       timeout: 15000
     }
   );
+
+  return {
+    pushed: true,
+    status: response.status,
+    statusText: response.statusText,
+    data: response.data,
+  };
 }
 
 module.exports = {pushTaskResultToClient}
