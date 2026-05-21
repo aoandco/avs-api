@@ -32,6 +32,8 @@ const listTasks = async (req, res) => {
       all: ["pending", "incomplete", "assigned", "completed", "over-due"],
     };
 
+    console.log("I am here")
+
     const allowedStatuses = statusMap[normalizedStatusFilter];
     if (!allowedStatuses) {
       return res.status(400).json({
@@ -1002,7 +1004,8 @@ const approveTaskReport = async (req, res) => {
     const results = {
       approved: [],
       notFound: [],
-      failed: []
+      failed: [],
+      pushFailed: [],
     };
 
     for (const id of taskIds) {
@@ -1018,8 +1021,19 @@ const approveTaskReport = async (req, res) => {
         task.reportIsApproved = true;
         await task.save();
 
+        results.approved.push(id);
+
         const client = await Client.findById(task.clientId);
-        if (client?.integration?.integrationEnabled) {
+        if (!client?.integration?.integrationEnabled) {
+          console.log("[approveTaskReport] Skipping push — integration not enabled", {
+            taskId: id,
+            activityId: task.activityId,
+            clientId: task.clientId,
+          });
+          continue;
+        }
+
+        try {
           console.log("[approveTaskReport] Pushing task result to client", {
             taskId: id,
             activityId: task.activityId,
@@ -1033,18 +1047,23 @@ const approveTaskReport = async (req, res) => {
             activityId: task.activityId,
             pushResult,
           });
-        } else {
-          console.log("[approveTaskReport] Skipping push — integration not enabled", {
+        } catch (pushErr) {
+          const pushError = pushErr.pushError || { message: pushErr.message };
+          console.error("[approveTaskReport] Push to client failed (task still approved)", {
             taskId: id,
             activityId: task.activityId,
-            clientId: task.clientId,
+            pushError,
           });
+          results.pushFailed.push({ id, pushError });
         }
-
-        results.approved.push(id);
       } catch (err) {
-        console.error(`Failed to approve report for task ${id}:`, err);
+        console.error(`Failed to approve report for task ${id}:`, err.message);
         results.failed.push({ id, error: err.message });
+        return res.status(500).json({
+          success: false,
+          message: err.message,
+          results
+        });
       }
     }
 
