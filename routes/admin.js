@@ -25,7 +25,7 @@ const {
      generateClientApiKeyByAdmin
     } = require("../controllers/adminController");
 
-router.get("/tasks", listTasks);
+router.get("/tasks", authenticate, authorizeAdmin, listTasks);
 router.post("/assign-task/:agentId", authenticate, authorizeAdmin, assignTask);
 router.get("/agents-with-completed-tasks", authenticate, authorizeAdmin, getAgentsWithCompletedTasks);
 router.get("/clients-task-uploads", authenticate, authorizeAdmin, getClientsWithTaskUploads);
@@ -39,7 +39,7 @@ router.post("/update-file-status/:fileId", authenticate,authorizeAdmin, updateFi
 router.post("/delete-file/:fileId", authenticate,authorizeAdmin, deleteFileUpload);
 router.post("/delete-task/:taskId", authenticate,authorizeAdmin, deleteTask);
 router.post("/tasks/all", authenticate, authorizeAdmin, deleteAllTasks);
-router.post("/approve-report", approveTaskReport);
+router.post("/approve-report", authenticate,authorizeAdmin, approveTaskReport);
 router.post("/reject-task/:taskId", authenticate,authorizeAdmin, rejectTask);
 router.get("/task-analytics", authenticate,authorizeAdmin, getAnalytics);
 router.post("/verify-task-address/:taskId", authenticate,authorizeAdmin, verifyTaskAddress);
