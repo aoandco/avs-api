@@ -104,6 +104,16 @@ const updateClientProfile = async (req, res) => {
   }
 };
 
+const getExcelCell = (row, ...keys) => {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+  return undefined;
+};
+
 const uploadTasksFromExcel = async (req, res) => {
   try {
     const clientId = req.user.id;
@@ -113,75 +123,106 @@ const uploadTasksFromExcel = async (req, res) => {
     const extension = mime.extension(req.file.mimetype);
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e4);
     const fileName = `upload-${uniqueSuffix}.${extension}`;
-    
-    // 1. Upload the Excel sheet to Cloudinary
-    const cloudinaryRes = await cloudinary.uploader.upload(filePath, {
-      public_id:fileName,
-      folder: "tasks/excel",
-      resource_type: "raw", 
-      type: "upload",
-    });
 
-    const taskUrl = cloudinaryRes.secure_url;
-
-    // 2. Store the uploaded Excel file URL
-    await TaskUpload.create({
-      clientId,
-      taskUrl,
-      fileName:originalFileName,
-    });
-
-    // 3. Read the file
+    // 1. Read and parse the Excel file first (before persisting anything)
     const workbook = XLSX.readFile(filePath);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet);
 
     const tasks = [];
+    let skippedRows = 0;
 
     for (const row of rows) {
-      const mapped = {
-        customerName: row["CustomerName"]?.trim(),
-        activityId: row["Activity id"]?.toString().trim(),
-        cif:row["Cif"]?.toString().trim(),
-        verificationAddress: row["FullAddress"]?.trim(),
-        state: row["State"]?.trim(),
-        city: row["City"]?.trim(),
-        country: row["Country"]?.trim(),
-        area: row["Town"]?.trim(),
-        landmark:row["Landmark"]?.trim(),
-        street:row["Street"]?.trim(),
-        mobileNumber:["MobileNumber"]?.trim(),
-        reactivationDateCreated:["ReactivationDateCreated"]?.trim(),
+      const customerName = getExcelCell(row, "CustomerName", "Customer Name", "customerName");
+      const verificationAddress = getExcelCell(
+        row,
+        "FullAddress",
+        "Full Address",
+        "fullAddress",
+        "Verification Address",
+        "VerificationAddress"
+      );
+      const street = getExcelCell(row, "Street", "street");
+      const city = getExcelCell(row, "City", "city");
+      const state = getExcelCell(row, "State", "state");
+      const area = getExcelCell(row, "Town", "Area", "area");
+      const landmark = getExcelCell(row, "Landmark", "landmark");
+      const country = getExcelCell(row, "Country", "country") || "Nigeria";
+      const activityId =
+        getExcelCell(row, "Activity id", "Activity Id", "ActivityID", "activityId") ||
+        uuidv4();
+      const cif = getExcelCell(row, "Cif", "CIF", "cif");
+      const reactivationRaw = getExcelCell(
+        row,
+        "ReactivationDateCreated",
+        "Reactivation Date Created"
+      );
+
+      if (!customerName || !verificationAddress) {
+        skippedRows += 1;
+        continue;
+      }
+
+      const taskDoc = {
+        clientId,
+        activityId,
+        customerName,
+        verificationAddress,
+        address: {
+          street: street || verificationAddress,
+          area,
+          city: city || state || "N/A",
+          state: state || "N/A",
+          country,
+          landmark,
+          fullAddress: verificationAddress,
+        },
       };
 
-      // Basic validation (skip invalid rows)
-      if (
-        !mapped.customerName ||
-        !mapped.verificationAddress
-      )
-        continue;
-
-      tasks.push({
-      clientId,
-      activityId: mapped.activityId,
-      cif:mapped.cif,
-      customerName: mapped.customerName,
-      verificationAddress: mapped.verificationAddress,
-      reactivationDateCreated:mapped.reactivationDateCreated,
-      address: {
-          street: mapped.street,
-          area: mapped.area,
-          city: mapped.city,
-          state: mapped.state,
-          country: mapped.country || "Nigeria",
-          fullAddress: mapped.fullAddress,
-  
+      if (cif) {
+        taskDoc.cif = cif;
       }
-    });
+
+      if (reactivationRaw) {
+        const parsedDate = new Date(reactivationRaw);
+        if (!Number.isNaN(parsedDate.getTime())) {
+          taskDoc.reactivationDateCreated = parsedDate;
+        }
+      }
+
+      tasks.push(taskDoc);
     }
 
-    // 4. Save to DB
-    await Task.insertMany(tasks);
+    if (tasks.length === 0) {
+      await fs.unlink(filePath);
+      return res.status(400).json({
+        success: false,
+        message:
+          "No valid tasks found in the Excel file. Check column headers (e.g. CustomerName, FullAddress) and required values.",
+        skippedRows,
+        totalRows: rows.length,
+      });
+    }
+
+    // 2. Save tasks
+    await Task.insertMany(tasks, { ordered: false });
+
+    // 3. Upload the Excel sheet to Cloudinary
+    const cloudinaryRes = await cloudinary.uploader.upload(filePath, {
+      public_id: fileName,
+      folder: "tasks/excel",
+      resource_type: "raw",
+      type: "upload",
+    });
+
+    const taskUrl = cloudinaryRes.secure_url;
+
+    // 4. Store the uploaded Excel file URL
+    await TaskUpload.create({
+      clientId,
+      taskUrl,
+      fileName: originalFileName,
+    });
 
     // 5. Cleanup
     await fs.unlink(filePath);
@@ -190,10 +231,15 @@ const uploadTasksFromExcel = async (req, res) => {
       success: true,
       message: "Tasks created and file uploaded successfully",
       totalTasks: tasks.length,
+      skippedRows,
+      totalRows: rows.length,
       taskUrl,
     });
   } catch (err) {
     console.error("Excel upload error:", err);
+    if (req.file?.path) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 };
