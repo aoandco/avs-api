@@ -28,7 +28,10 @@ const taskSchema = new mongoose.Schema({
   },
   activityId: {
     type: String,
-    required: true,
+    unique: true
+  },
+  cif: {
+    type: String,
     unique: true
   },
   customerName: {
@@ -52,6 +55,10 @@ const taskSchema = new mongoose.Schema({
 
   city: {
     type: String,
+  },
+  
+  reactivationDateCreated: {
+    type: Date,
   },
 
   status: {

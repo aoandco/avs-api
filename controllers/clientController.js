@@ -140,17 +140,24 @@ const uploadTasksFromExcel = async (req, res) => {
 
     for (const row of rows) {
       const mapped = {
-        customerName: row["Customer Name"]?.trim(),
-        activityId: row["Activity ID"]?.toString().trim(),
-        verificationAddress: row["Verification Address"]?.trim(),
+        customerName: row["CustomerName"]?.trim(),
+        activityId: row["Activity id"]?.toString().trim(),
+        cif:row["Cif"]?.toString().trim(),
+        verificationAddress: row["FullAddress"]?.trim(),
         state: row["State"]?.trim(),
         city: row["City"]?.trim(),
+        country: row["Country"]?.trim(),
+        area: row["Town"]?.trim(),
+        landmark:row["Landmark"]?.trim(),
+        street:row["Street"]?.trim(),
+        mobileNumber:["MobileNumber"]?.trim(),
+        reactivationDateCreated:["ReactivationDateCreated"]?.trim(),
       };
 
       // Basic validation (skip invalid rows)
       if (
         !mapped.customerName ||
-        !mapped.activityId ||
+        !(mapped.activityId && mapped.cif)||
         !mapped.verificationAddress ||
         !mapped.state ||
         !mapped.city
@@ -159,16 +166,19 @@ const uploadTasksFromExcel = async (req, res) => {
 
       tasks.push({
       clientId,
-      customerName: mapped.customerName,
       activityId: mapped.activityId,
+      cif:mapped.cif,
+      customerName: mapped.customerName,
       verificationAddress: mapped.verificationAddress,
-      state: mapped.state,
-      city: mapped.city,
+      reactivationDateCreated:mapped.reactivationDateCreated,
       address: {
-        street: mapped.verificationAddress,
-        city: mapped.city,
-        state: mapped.state,
-        country: "Nigeria"
+          street: mapped.street,
+          area: mapped.area,
+          city: mapped.city,
+          state: mapped.state,
+          country: mapped.country || "Nigeria",
+          fullAddress: mapped.fullAddress,
+  
       }
     });
     }

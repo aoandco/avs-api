@@ -142,14 +142,14 @@ async function pushTaskResultToClient(task, client) {
     addressVerificationResponses: [responseItem],
   };
 
-  console.log("[pushTaskResultToClient] Payload shape", {
-    activityId: task.activityId,
-    hasRequest: Boolean(payload.request),
-    hasRootResponses: Array.isArray(payload.addressVerificationResponses),
-    responseCount: payload.addressVerificationResponses?.length,
-    addressType: typeof payload.addressVerificationResponses?.[0]?.address,
-    mediaCount: addressMedia.length,
-  });
+  // console.log("[pushTaskResultToClient] Payload shape", {
+  //   activityId: task.activityId,
+  //   hasRequest: Boolean(payload.request),
+  //   hasRootResponses: Array.isArray(payload.addressVerificationResponses),
+  //   responseCount: payload.addressVerificationResponses?.length,
+  //   addressType: typeof payload.addressVerificationResponses?.[0]?.address,
+  //   mediaCount: addressMedia.length,
+  // });
 
   try {
     const response = await axios.post(client.integration.avsEndpoint, payload, {
@@ -163,12 +163,33 @@ async function pushTaskResultToClient(task, client) {
       maxContentLength: Infinity,
     });
 
-    return {
+    const result = {
       pushed: true,
       status: response.status,
       statusText: response.statusText,
       data: response.data,
     };
+
+    console.log(
+      "[pushTaskResultToClient] Outbound payload",
+      JSON.stringify(payload, null, 2)
+    );
+
+    console.log(
+      "[pushTaskResultToClient] Client push succeeded",
+      JSON.stringify(
+        {
+          activityId: task.activityId,
+          status: result.status,
+          statusText: result.statusText,
+          data: result.data,
+        },
+        null,
+        2
+      )
+    );
+
+    return result;
   } catch (err) {
     const formatted = formatPushError(err);
     const subscriptionKey = client.integration.subscriptionKey || "";

@@ -992,7 +992,12 @@ const deleteAllTasks = async (req, res) => {
 
 const approveTaskReport = async (req, res) => {
   try {
+
+    console.log("req.body", req.body);
+
     const { taskIds } = req.body; 
+
+    console.log("taskIds", taskIds);
 
     if (!Array.isArray(taskIds) || taskIds.length === 0) {
       return res.status(400).json({
@@ -1014,14 +1019,10 @@ const approveTaskReport = async (req, res) => {
         const task = await Task.findById(taskId);
 
         if (!task) {
+          console.log("task not found", id);
           results.notFound.push(id);
           continue;
         }
-
-        task.reportIsApproved = true;
-        await task.save();
-
-        results.approved.push(id);
 
         const client = await Client.findById(task.clientId);
         if (!client?.integration?.integrationEnabled) {
@@ -1034,19 +1035,32 @@ const approveTaskReport = async (req, res) => {
         }
 
         try {
-          console.log("[approveTaskReport] Pushing task result to client", {
-            taskId: id,
-            activityId: task.activityId,
-            clientId: client._id,
-            endpoint: client.integration.avsEndpoint,
-          });
-
           const pushResult = await pushTaskResultToClient(task, client);
-          console.log("[approveTaskReport] pushTaskResultToClient response", {
-            taskId: id,
-            activityId: task.activityId,
-            pushResult,
+          console.log(
+            "[approveTaskReport] pushTaskResultToClient response",
+            JSON.stringify(
+              {
+                taskId: id,
+                activityId: task.activityId,
+                pushResult,
+              },
+              null,
+              2
+            )
+          );
+
+          if (!pushResult.data.status){
+            return res.status(400).json({
+            success: false,
+            message: "Task report approval failed.",
+            results:pushResult
           });
+          }
+
+          results.approved.push({id});
+          task.reportIsApproved = true;
+          await task.save();
+
         } catch (pushErr) {
           const pushError = pushErr.pushError || { message: pushErr.message };
           console.error("[approveTaskReport] Push to client failed (task still approved)", {
@@ -1065,8 +1079,10 @@ const approveTaskReport = async (req, res) => {
           results
         });
       }
+
     }
 
+    
     return res.status(200).json({
       success: true,
       message: "Task report approval completed.",
