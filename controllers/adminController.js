@@ -992,12 +992,7 @@ const deleteAllTasks = async (req, res) => {
 
 const approveTaskReport = async (req, res) => {
   try {
-
-    console.log("req.body", req.body);
-
     const { taskIds } = req.body; 
-
-    console.log("taskIds", taskIds);
 
     if (!Array.isArray(taskIds) || taskIds.length === 0) {
       return res.status(400).json({
@@ -1028,7 +1023,7 @@ const approveTaskReport = async (req, res) => {
         if (!client?.integration?.integrationEnabled) {
           console.log("[approveTaskReport] Skipping push — integration not enabled", {
             taskId: id,
-            activityId: task.activityId,
+            activityId: task.activityId || task.cif,
             clientId: task.clientId,
           });
           continue;
