@@ -157,10 +157,7 @@ const uploadTasksFromExcel = async (req, res) => {
       // Basic validation (skip invalid rows)
       if (
         !mapped.customerName ||
-        !(mapped.activityId && mapped.cif)||
-        !mapped.verificationAddress ||
-        !mapped.state ||
-        !mapped.city
+        !mapped.verificationAddress
       )
         continue;
 
