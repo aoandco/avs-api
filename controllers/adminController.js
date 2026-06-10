@@ -62,8 +62,6 @@ const listTasks = async (req, res) => {
       all: ["pending", "incomplete", "assigned", "completed", "over-due"],
     };
 
-    console.log("I am here")
-
     const allowedStatuses = statusMap[normalizedStatusFilter];
     if (!allowedStatuses) {
       return res.status(400).json({
