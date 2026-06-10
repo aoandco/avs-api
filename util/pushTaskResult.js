@@ -164,9 +164,10 @@ async function pushTaskResultToClient(task, client) {
     });
 
     const result = {
-      pushed: true,
+      statuscode:response.data.statusCode || "null",
       status: response.status,
       statusText: response.statusText,
+      message: response.data.message || "null",
       data: response.data,
     };
 

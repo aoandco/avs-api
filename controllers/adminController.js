@@ -15,10 +15,40 @@ const { generateTaskPDF, uploadPDFToCloudinary } = require("../service/pdfServic
 const axios = require("axios");
 const {pushTaskResultToClient} = require("../util/pushTaskResult")
 const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
+const { WEMA_COMPANY_NAME, isWemaClient } = require("../util/clientConstants");
+
+async function getClientIdsForCompanyFilter(companyNameFilter) {
+  const normalized = String(companyNameFilter || "all").trim().toLowerCase();
+  if (normalized === "all" || normalized === "") {
+    return null;
+  }
+
+  if (normalized === "wema" || normalized === "wema bank ltd") {
+    const ids = await Client.find({ companyName: WEMA_COMPANY_NAME }).distinct("_id");
+    return { $in: ids };
+  }
+
+  if (normalized === "others" || normalized === "non-wema") {
+    const ids = await Client.find({ companyName: WEMA_COMPANY_NAME }).distinct("_id");
+    return { $nin: ids };
+  }
+
+  const ids = await Client.find({
+    companyName: { $regex: companyNameFilter, $options: "i" },
+  }).distinct("_id");
+  return { $in: ids };
+}
 
 const listTasks = async (req, res) => {
   try {
-    const { statusFilter = "all", state, startDate, endDate, search } = req.query;
+    const {
+      statusFilter = "all",
+      state,
+      startDate,
+      endDate,
+      search,
+      companyNameFilter = "all",
+    } = req.query;
     const normalizedStatusFilter = String(statusFilter || "").trim().toLowerCase();
 
     const statusMap = {
@@ -66,6 +96,11 @@ const listTasks = async (req, res) => {
         end.setHours(23, 59, 59, 999);
         filter.createdAt.$lte = end;
       }
+    }
+
+    const clientIdFilter = await getClientIdsForCompanyFilter(companyNameFilter);
+    if (clientIdFilter) {
+      filter.clientId = clientIdFilter;
     }
 
     // Build main query with population
@@ -1005,90 +1040,90 @@ const approveTaskReport = async (req, res) => {
       approved: [],
       notFound: [],
       failed: [],
-      pushFailed: [],
     };
 
+    let clientResponse;
+
     for (const id of taskIds) {
-      try {
-        const taskId = new mongoose.Types.ObjectId(id);
-        const task = await Task.findById(taskId);
+      const taskId = new mongoose.Types.ObjectId(id);
+      const task = await Task.findById(taskId);
 
-        if (!task) {
-          console.log("task not found", id);
-          results.notFound.push(id);
-          continue;
-        }
+      if (!task) {
+        console.log("task not found", id);
+        results.notFound.push(id);
+        continue;
+      }
 
-        const client = await Client.findById(task.clientId);
-        if (!client?.integration?.integrationEnabled) {
-          console.log("[approveTaskReport] Skipping push — integration not enabled", {
-            taskId: id,
-            activityId: task.activityId || task.cif,
-            clientId: task.clientId,
+      const client = await Client.findById(task.clientId);
+      if (!client) {
+        results.failed.push({ id, error: "Client not found." });
+        continue;
+      }
+
+      if (isWemaClient(client)) {
+        if (!client.integration?.integrationEnabled) {
+          results.failed.push({
+            id,
+            error: "Wema integration is not enabled for this client.",
           });
           continue;
         }
 
-        try {
-          const pushResult = await pushTaskResultToClient(task, client);
-          console.log(
-            "[approveTaskReport] pushTaskResultToClient response",
-            JSON.stringify(
-              {
-                taskId: id,
-                activityId: task.activityId,
-                pushResult,
-              },
-              null,
-              2
-            )
-          );
+        const pushResult = await pushTaskResultToClient(task, client);
+        console.log(
+          "[approveTaskReport] pushTaskResultToClient response",
+          JSON.stringify(
+            {
+              taskId: id,
+              activityId: task.activityId,
+              pushResult,
+            },
+            null,
+            2
+          )
+        );
 
-          if (!pushResult.data.status){
-            return res.status(400).json({
+        if (!pushResult.data?.status) {
+          return res.status(pushResult.data?.statusCode || 400).json({
             success: false,
-            message: "Task report approval failed.",
-            results:pushResult
+            message: pushResult.data?.message || "Task report approval failed.",
+            data: pushResult.data,
+            results,
           });
-          }
-
-          results.approved.push({id});
-          task.reportIsApproved = true;
-          await task.save();
-
-        } catch (pushErr) {
-          const pushError = pushErr.pushError || { message: pushErr.message };
-          console.error("[approveTaskReport] Push to client failed (task still approved)", {
-            taskId: id,
-            activityId: task.activityId,
-            pushError,
-          });
-          results.pushFailed.push({ id, pushError });
         }
-      } catch (err) {
-        console.error(`Failed to approve report for task ${id}:`, err.message);
-        results.failed.push({ id, error: err.message });
-        return res.status(500).json({
-          success: false,
-          message: err.message,
-          results
+
+        clientResponse = pushResult.data;
+        results.approved.push({ id, data: pushResult.data });
+      } else {
+        results.approved.push({
+          id,
+          message: "Report approved successfully.",
         });
       }
 
+      task.reportIsApproved = true;
+      await task.save();
     }
 
-    
     return res.status(200).json({
       success: true,
       message: "Task report approval completed.",
-      results
+      data: clientResponse,
+      results,
     });
-
   } catch (err) {
     console.error("Mass report approval error:", err);
+    if (err.pushError) {
+      const { pushError } = err;
+      return res.status(pushError.status || 500).json({
+        success: false,
+        message: pushError.message || err.message,
+        data: pushError.data,
+      });
+    }
     return res.status(500).json({
       success: false,
-      message: "Server error.",
+      message: err.message || "Server error.",
     });
   }
 };
@@ -1157,10 +1192,10 @@ const rejectTask = async (req, res) => {
 
     await task.save();
 
-    await pushTaskResultToClient(
-      task,
-      await Client.findById(task.clientId)
-    );
+    const client = await Client.findById(task.clientId);
+    if (isWemaClient(client) && client?.integration?.integrationEnabled) {
+      await pushTaskResultToClient(task, client);
+    }
 
     return res.status(200).json({
       success: true,

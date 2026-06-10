@@ -406,11 +406,15 @@ const getDashboardStats = async (req, res) => {
         })
         .sort({ createdAt: -1 })
         .select(`
-          activityId 
-          customerName 
-          verificationAddress 
-          address 
-          state 
+          activityId
+          customerName
+          verificationAddress
+          address
+          state
+          city
+          status
+          createdAt
+          reportIsApproved
           feedback.addressExistence 
           feedback.addressResidential 
           feedback.customerResident 
@@ -504,7 +508,19 @@ const getDashboardStats = async (req, res) => {
 
 
     const formattedTasks = reportTasks.map(task => {
-  const { activityId, customerName, verificationAddress, address, state, feedback = {} } = task;
+  const {
+    _id,
+    activityId,
+    customerName,
+    verificationAddress,
+    address,
+    state,
+    city,
+    status,
+    createdAt,
+    reportIsApproved,
+    feedback = {},
+  } = task;
 
   const {
     addressExistence,
@@ -539,12 +555,22 @@ const getDashboardStats = async (req, res) => {
   const secondImage = geotaggedImages[1] || null;
 
   return {
+    _id,
     activityId,
     customerName,
     verificationAddress,
     fullAddress: address?.fullAddress,
     additionalInformation: address?.additionalInformation,
-    state,
+    street: address?.street,
+    area: address?.area,
+    city: address?.city || city,
+    state: address?.state || state,
+    country: address?.country,
+    landmark: address?.landmark,
+    postalCode: address?.postalCode,
+    status,
+    createdAt,
+    reportIsApproved,
     addressExistence,
     addressResidential,
     customerResident,
@@ -568,7 +594,7 @@ const getDashboardStats = async (req, res) => {
     latitude: lat,
     longitude: lng,
     firstGeotaggedImage: firstImage,
-    firstGeotaggedImage:secondImage,
+    secondGeotaggedImage: secondImage,
     reportUrl,
   };
 });
