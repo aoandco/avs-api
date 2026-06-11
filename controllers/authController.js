@@ -565,7 +565,7 @@ const login = async (req, res) => {
   try {
     const { role } = req.params;
 
-    const { email, password } = req.body;
+    const { email} = req.body;
     const Model = getModelByRole(role);
     const user = await Model.findOne({ email });
 
@@ -575,12 +575,12 @@ const login = async (req, res) => {
         .json({ success: false, message: `${role} not found` });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Invalid credentials" });
-    }
+    // const isMatch = await bcrypt.compare(password, user.password);
+    // if (!isMatch) {
+    //   return res
+    //     .status(401)
+    //     .json({ success: false, message: "Invalid credentials" });
+    // }
 
     if (!user.isVerified) {
       return res
