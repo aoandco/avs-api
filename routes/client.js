@@ -10,6 +10,7 @@ const {
      fetchComplaints,
      getAllNotifications,
      getDashboardStats,
+     getApprovedReports,
      getAllUploads,
      getAnalytics,
      generateClientApiKey,
@@ -24,6 +25,7 @@ router.post("/submit-complaint", authenticateOrVerifyApiKey, submitComplaint);
 router.get("/complaints", authenticateOrVerifyApiKey, fetchComplaints);
 router.get("/notifications", authenticateOrVerifyApiKey, getAllNotifications);
 router.get("/dashboard-stats", authenticateOrVerifyApiKey, getDashboardStats);
+router.get("/approved-reports", authenticateOrVerifyApiKey, getApprovedReports);
 router.get("/task-uploads", authenticateOrVerifyApiKey, getAllUploads);
 router.get("/task-analytics", authenticateOrVerifyApiKey, getAnalytics);
 

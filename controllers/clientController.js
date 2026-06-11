@@ -12,6 +12,10 @@ const Notification = require("../model/Notification");
 const mongoose = require("mongoose");
 const mime = require("mime-types")
 const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
+const {
+  formatApprovedReportTask,
+  APPROVED_REPORT_TASK_SELECT,
+} = require("../util/formatApprovedReport");
 
 const generateClientApiKey = async (req, res) => {
   try {
@@ -218,11 +222,17 @@ const uploadTasksFromExcel = async (req, res) => {
     const taskUrl = cloudinaryRes.secure_url;
 
     // 4. Store the uploaded Excel file URL
-    await TaskUpload.create({
+    const taskUpload = await TaskUpload.create({
       clientId,
       taskUrl,
       fileName: originalFileName,
     });
+
+    const activityIds = tasks.map((task) => task.activityId);
+    await Task.updateMany(
+      { clientId, activityId: { $in: activityIds } },
+      { $set: { taskUploadId: taskUpload._id } }
+    );
 
     // 5. Cleanup
     await fs.unlink(filePath);
@@ -399,46 +409,14 @@ const getDashboardStats = async (req, res) => {
         .select("fileName uploadedAt status")
         .sort({ uploadedAt: -1 }),
 
-      Task.find({ 
+      Task.find({
         clientId,
         "feedback.reportUrl": { $ne: null },
-        reportIsApproved: true
-        })
+        reportIsApproved: true,
+      })
+        .populate({ path: "taskUploadId", select: "fileName uploadedAt" })
         .sort({ createdAt: -1 })
-        .select(`
-          activityId
-          customerName
-          verificationAddress
-          address
-          state
-          city
-          status
-          createdAt
-          reportIsApproved
-          feedback.addressExistence 
-          feedback.addressResidential 
-          feedback.customerResident 
-          feedback.customerKnown 
-          feedback.metWith 
-          feedback.nameOfPersonMet 
-          feedback.easeOfLocation 
-          feedback.comments 
-          feedback.additionalComments 
-          feedback.relatioshipWithCustomer 
-          feedback.customerRelationshipWithAddress 
-          feedback.buildingColor 
-          feedback.buildingType 
-          feedback.areaProfile 
-          feedback.landMark 
-          feedback.receivedDate 
-          feedback.personMetOthers 
-          feedback.visitFeedback 
-          feedback.geoMapping 
-          feedback.geotaggedImages 
-          feedback.recordedAudio 
-          feedback.recordedVideo 
-          feedback.reportUrl
-        `)
+        .select(APPROVED_REPORT_TASK_SELECT),
     ]);
 
     const [totalPending, totalVerified] = await Promise.all([
@@ -507,98 +485,7 @@ const getDashboardStats = async (req, res) => {
     });
 
 
-    const formattedTasks = reportTasks.map(task => {
-  const {
-    _id,
-    activityId,
-    customerName,
-    verificationAddress,
-    address,
-    state,
-    city,
-    status,
-    createdAt,
-    reportIsApproved,
-    feedback = {},
-  } = task;
-
-  const {
-    addressExistence,
-    addressResidential,
-    customerResident,
-    customerKnown,
-    metWith,
-    nameOfPersonMet,
-    easeOfLocation,
-    comments,
-    additionalComments,
-    relatioshipWithCustomer,
-    customerRelationshipWithAddress,
-    buildingColor,
-    buildingType,
-    areaProfile,
-    landMark,
-    receivedDate,
-    personMetOthers,
-    visitFeedback,
-    reportUrl,
-    recordedAudio,
-    recordedVideo,
-    geoMapping = {},
-    geotaggedImages = []
-  } = feedback;
-
-  const { lat, lng } = geoMapping;
-
-  // Use first geotagged image or null
-  const firstImage = geotaggedImages[0] || null;
-  const secondImage = geotaggedImages[1] || null;
-
-  return {
-    _id,
-    activityId,
-    customerName,
-    verificationAddress,
-    fullAddress: address?.fullAddress,
-    additionalInformation: address?.additionalInformation,
-    street: address?.street,
-    area: address?.area,
-    city: address?.city || city,
-    state: address?.state || state,
-    country: address?.country,
-    landmark: address?.landmark,
-    postalCode: address?.postalCode,
-    status,
-    createdAt,
-    reportIsApproved,
-    addressExistence,
-    addressResidential,
-    customerResident,
-    customerKnown,
-    metWith,
-    nameOfPersonMet,
-    easeOfLocation,
-    comments,
-    additionalComments,
-    relatioshipWithCustomer,
-    customerRelationshipWithAddress,
-    buildingColor,
-    buildingType,
-    areaProfile,
-    landMark,
-    receivedDate,
-    personMetOthers,
-    visitFeedback,
-    recordedAudio,
-    recordedVideo,
-    latitude: lat,
-    longitude: lng,
-    firstGeotaggedImage: firstImage,
-    secondGeotaggedImage: secondImage,
-    reportUrl,
-  };
-});
-
+    const formattedTasks = reportTasks.map(formatApprovedReportTask);
 
     res.status(200).json({
       success: true,
@@ -616,6 +503,76 @@ const getDashboardStats = async (req, res) => {
     });
   } catch (err) {
     console.error("Dashboard stats error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const getApprovedReports = async (req, res) => {
+  try {
+    const clientId = req.user.id;
+    const { fileName, taskUploadId } = req.query;
+
+    const filter = {
+      clientId,
+      reportIsApproved: true,
+      "feedback.reportUrl": { $ne: null },
+    };
+
+    if (taskUploadId) {
+      if (!mongoose.Types.ObjectId.isValid(taskUploadId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid taskUploadId.",
+        });
+      }
+      filter.taskUploadId = new mongoose.Types.ObjectId(taskUploadId);
+    } else if (fileName && String(fileName).trim()) {
+      const uploads = await TaskUpload.find({
+        clientId,
+        fileName: { $regex: String(fileName).trim(), $options: "i" },
+      }).select("_id");
+
+      const uploadIds = uploads.map((upload) => upload._id);
+      if (uploadIds.length === 0) {
+        const uploadFiles = await TaskUpload.find({ clientId })
+          .select("fileName uploadedAt")
+          .sort({ uploadedAt: -1 });
+
+        return res.status(200).json({
+          success: true,
+          message: "No approved reports found for the selected upload file.",
+          total: 0,
+          data: {
+            uploads: uploadFiles,
+            reports: [],
+          },
+        });
+      }
+
+      filter.taskUploadId = { $in: uploadIds };
+    }
+
+    const [reports, uploads] = await Promise.all([
+      Task.find(filter)
+        .populate({ path: "taskUploadId", select: "fileName uploadedAt" })
+        .sort({ createdAt: -1 })
+        .select(APPROVED_REPORT_TASK_SELECT),
+      TaskUpload.find({ clientId })
+        .select("fileName uploadedAt")
+        .sort({ uploadedAt: -1 }),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: "Approved reports retrieved",
+      total: reports.length,
+      data: {
+        uploads,
+        reports: reports.map(formatApprovedReportTask),
+      },
+    });
+  } catch (err) {
+    console.error("Approved reports error:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -844,6 +801,7 @@ module.exports = {
   fetchComplaints,
   getAllNotifications,
   getDashboardStats,
+  getApprovedReports,
   getAllUploads,
   getAnalytics,
 

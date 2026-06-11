@@ -21,6 +21,11 @@ const taskSchema = new mongoose.Schema({
     ref: "Client",
     required: true
   },
+  taskUploadId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "TaskUpload",
+    default: null,
+  },
   agentId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Agent",
