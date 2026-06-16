@@ -1,13 +1,13 @@
 const axios = require("axios");
 const { buildAddressMedia } = require("../util/buildAddressMedia");
+const { savePushPayloadToFile } = require("../util/savePushPayload");
 
 const PUSH_TIMEOUT_MS = Number(process.env.CLIENT_PUSH_TIMEOUT_MS) || 90000;
 
 function mapVerificationStatus(task) {
-  if (!task.reportIsApproved) return 1; // Pending
-  if (task.status === "completed") return 2; // Success
-  if (task.status === "incomplete") return 3; // Failed
-  return 4; // Returned
+  if (task.status === "completed") return 1; // Success
+  if (task.status === "incomplete") return 2; // Failed
+  return 3; // Returned
 }
 
 function asString(value, fallback = "N/A") {
@@ -88,7 +88,7 @@ function formatPushError(err) {
   };
 }
 
-async function pushTaskResultToClient(task, client) {
+async function pushTaskResultToClient(task, client, options = {}) {
   if (!client?.integration?.integrationEnabled) {
     return { pushed: false, reason: "integration_disabled" };
   }
@@ -142,6 +142,11 @@ async function pushTaskResultToClient(task, client) {
     addressVerificationResponses: [responseItem],
   };
 
+  if (options.writePayloadFile) {
+    const payloadFilePath = await savePushPayloadToFile(payload);
+    console.log("[pushTaskResultToClient] Payload saved to file", payloadFilePath);
+  }
+
   // console.log("[pushTaskResultToClient] Payload shape", {
   //   activityId: task.activityId,
   //   hasRequest: Boolean(payload.request),
@@ -171,24 +176,24 @@ async function pushTaskResultToClient(task, client) {
       data: response.data,
     };
 
-    console.log(
-      "[pushTaskResultToClient] Outbound payload",
-      JSON.stringify(payload, null, 2)
-    );
+    // console.log(
+    //   "[pushTaskResultToClient] Outbound payload",
+    //   JSON.stringify(payload, null, 2)
+    // );
 
-    console.log(
-      "[pushTaskResultToClient] Client push succeeded",
-      JSON.stringify(
-        {
-          activityId: task.activityId,
-          status: result.status,
-          statusText: result.statusText,
-          data: result.data,
-        },
-        null,
-        2
-      )
-    );
+    // console.log(
+    //   "[pushTaskResultToClient] Client push succeeded",
+    //   JSON.stringify(
+    //     {
+    //       activityId: task.activityId,
+    //       status: result.status,
+    //       statusText: result.statusText,
+    //       data: result.data,
+    //     },
+    //     null,
+    //     2
+    //   )
+    // );
 
     return result;
   } catch (err) {

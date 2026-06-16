@@ -1067,19 +1067,21 @@ const approveTaskReport = async (req, res) => {
           continue;
         }
 
-        const pushResult = await pushTaskResultToClient(task, client);
-        console.log(
-          "[approveTaskReport] pushTaskResultToClient response",
-          JSON.stringify(
-            {
-              taskId: id,
-              activityId: task.activityId,
-              pushResult,
-            },
-            null,
-            2
-          )
-        );
+        const pushResult = await pushTaskResultToClient(task, client, {
+          writePayloadFile: true,
+        });
+        // console.log(
+        //   "[approveTaskReport] pushTaskResultToClient response",
+        //   JSON.stringify(
+        //     {
+        //       taskId: id,
+        //       activityId: task.activityId,
+        //       pushResult,
+        //     },
+        //     null,
+        //     2
+        //   )
+        // );
 
         if (!pushResult.data?.status) {
           return res.status(pushResult.data?.statusCode || 400).json({
