@@ -14,6 +14,11 @@ const sendEmail = require("../util/sendEmail");
 const { generateTaskPDF, uploadPDFToCloudinary } = require("../service/pdfService")
 const axios = require("axios");
 const {pushTaskResultToClient} = require("../util/pushTaskResult")
+const {
+  getApprovalFilter,
+  getVerificationStatusFilter,
+  buildApprovedVerificationFilter,
+} = require("../util/verificationStatus");
 const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
 const { WEMA_COMPANY_NAME, isWemaClient } = require("../util/clientConstants");
 
@@ -43,6 +48,8 @@ const listTasks = async (req, res) => {
   try {
     const {
       statusFilter = "all",
+      approvalFilter = "all",
+      verificationFilter = "all",
       state,
       startDate,
       endDate,
@@ -50,6 +57,22 @@ const listTasks = async (req, res) => {
       companyNameFilter = "all",
     } = req.query;
     const normalizedStatusFilter = String(statusFilter || "").trim().toLowerCase();
+    const normalizedApprovalFilter = String(approvalFilter || "all")
+      .trim()
+      .toLowerCase();
+    const normalizedVerificationFilter = String(verificationFilter || "all")
+      .trim()
+      .toLowerCase();
+
+    const approvalStatusMap = {
+      approved: { reportIsApproved: true },
+      unapproved: { reportIsApproved: { $ne: true } },
+      "approval-success": buildApprovedVerificationFilter("success"),
+      "approval-failed": buildApprovedVerificationFilter("failed"),
+      "approval-returned": buildApprovedVerificationFilter("returned"),
+    };
+
+    const approvalStatusFilter = approvalStatusMap[normalizedStatusFilter];
 
     const statusMap = {
       pending: ["pending"],
@@ -62,19 +85,56 @@ const listTasks = async (req, res) => {
       all: ["pending", "incomplete", "assigned", "completed", "over-due"],
     };
 
-    const allowedStatuses = statusMap[normalizedStatusFilter];
-    if (!allowedStatuses) {
+    if (!approvalStatusFilter) {
+      const allowedStatuses = statusMap[normalizedStatusFilter];
+      if (!allowedStatuses) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Invalid status. Use "assigned", "incomplete", "inProgress", "completed", "pending", "overdue", "approved", "unapproved", "approval-success", "approval-failed", "approval-returned", or "all"',
+        });
+      }
+    }
+
+    if (
+      normalizedApprovalFilter !== "all" &&
+      !getApprovalFilter(normalizedApprovalFilter)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid approvalFilter. Use "all", "approved", or "unapproved".',
+      });
+    }
+
+    if (
+      normalizedVerificationFilter !== "all" &&
+      !getVerificationStatusFilter(normalizedVerificationFilter)
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          'Invalid status. Use "assigned", "incomplete", "inProgress", "completed", "pending", "overdue", or "all"',
+          'Invalid verificationFilter. Use "all", "success", "failed", or "returned".',
       });
     }
 
     // === Build Filter Object ===
-    const filter = {
-      status: { $in: allowedStatuses },
-    };
+    const filter = approvalStatusFilter
+      ? { ...approvalStatusFilter }
+      : {
+          status: { $in: statusMap[normalizedStatusFilter] },
+        };
+
+    const standaloneApprovalFilter = getApprovalFilter(normalizedApprovalFilter);
+    if (standaloneApprovalFilter) {
+      Object.assign(filter, standaloneApprovalFilter);
+    }
+
+    const standaloneVerificationFilter = getVerificationStatusFilter(
+      normalizedVerificationFilter
+    );
+    if (standaloneVerificationFilter) {
+      Object.assign(filter, standaloneVerificationFilter);
+    }
 
     if (state) {
       filter.state = state;
@@ -596,21 +656,44 @@ const getDashboardStats = async (req, res) => {
       }
     }
 
-    const buildTaskFilter = (status) =>
-      status ? { ...createdAtFilter, status } : { ...createdAtFilter };
+    const buildTaskFilter = (extra = {}) => ({ ...createdAtFilter, ...extra });
 
-    const [totalTasks, assignedTasks, overdueTasks, pendingTasks, incompleteTasks, verifiedTasks, agentCount, taskFiles] = await Promise.all([
+    const [
+      totalTasks,
+      assignedTasks,
+      overdueTasks,
+      pendingTasks,
+      incompleteTasks,
+      verifiedTasks,
+      approvedReports,
+      unapprovedReports,
+      approvedSuccessReports,
+      approvedFailedReports,
+      approvedReturnedReports,
+      agentCount,
+      taskFiles,
+    ] = await Promise.all([
       Task.countDocuments(buildTaskFilter()),
-      Task.countDocuments(buildTaskFilter("assigned")),
-      Task.countDocuments(buildTaskFilter("over-due")),
-      Task.countDocuments(buildTaskFilter("pending")),
-      Task.countDocuments(buildTaskFilter("incomplete")),
-      Task.countDocuments(buildTaskFilter("completed")),
+      Task.countDocuments(buildTaskFilter({ status: "assigned" })),
+      Task.countDocuments(buildTaskFilter({ status: "over-due" })),
+      Task.countDocuments(buildTaskFilter({ status: "pending" })),
+      Task.countDocuments(buildTaskFilter({ status: "incomplete" })),
+      Task.countDocuments(buildTaskFilter({ status: "completed" })),
+      Task.countDocuments(buildTaskFilter({ reportIsApproved: true })),
+      Task.countDocuments(buildTaskFilter({ reportIsApproved: { $ne: true } })),
+      Task.countDocuments(
+        buildApprovedVerificationFilter("success", createdAtFilter)
+      ),
+      Task.countDocuments(
+        buildApprovedVerificationFilter("failed", createdAtFilter)
+      ),
+      Task.countDocuments(
+        buildApprovedVerificationFilter("returned", createdAtFilter)
+      ),
       Agent.countDocuments(),
-      TaskUpload
-          .find()
-          .select("fileName taskUrl uploadedAt status")
-          .sort({ uploadedAt:-1})
+      TaskUpload.find()
+        .select("fileName taskUrl uploadedAt status")
+        .sort({ uploadedAt: -1 }),
     ]);
 
     return res.status(200).json({
@@ -622,8 +705,13 @@ const getDashboardStats = async (req, res) => {
         pendingTasks,
         incompleteTasks,
         verifiedTasks,
+        approvedReports,
+        unapprovedReports,
+        approvedSuccessReports,
+        approvedFailedReports,
+        approvedReturnedReports,
         agentCount,
-        taskFiles
+        taskFiles,
       },
     });
   } catch (err) {

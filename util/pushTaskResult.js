@@ -1,14 +1,9 @@
 const axios = require("axios");
 const { buildAddressMedia } = require("../util/buildAddressMedia");
 const { savePushPayloadToFile } = require("../util/savePushPayload");
+const { mapVerificationStatus } = require("../util/verificationStatus");
 
 const PUSH_TIMEOUT_MS = Number(process.env.CLIENT_PUSH_TIMEOUT_MS) || 90000;
-
-function mapVerificationStatus(task) {
-  if (task.status === "completed") return 1; // Success
-  if (task.status === "incomplete") return 2; // Failed
-  return 3; // Returned
-}
 
 function asString(value, fallback = "N/A") {
   if (value === null || value === undefined) return fallback;

@@ -50,6 +50,7 @@ function formatApprovedReportTask(task) {
   return {
     _id,
     activityId,
+    cif: task.cif,
     customerName,
     verificationAddress,
     fullAddress: address?.fullAddress,
@@ -97,6 +98,7 @@ function formatApprovedReportTask(task) {
 
 const APPROVED_REPORT_TASK_SELECT = `
   activityId
+  cif
   customerName
   verificationAddress
   address
