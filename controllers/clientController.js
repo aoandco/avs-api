@@ -391,6 +391,90 @@ const getAllNotifications = async (req, res) => {
   }
 };
 
+async function getClientUploadHistoryStats(clientId) {
+  const clientObjectId = new mongoose.Types.ObjectId(clientId);
+  const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+  const endOfYear = new Date(
+    new Date().getFullYear(),
+    11,
+    31,
+    23,
+    59,
+    59,
+    999
+  );
+
+  const [totalRequest, totalPending, totalVerified] = await Promise.all([
+    Task.countDocuments({ clientId: clientObjectId }),
+    Task.countDocuments({
+      clientId: clientObjectId,
+      reportIsApproved: { $ne: true },
+    }),
+    Task.countDocuments({ clientId: clientObjectId, reportIsApproved: true }),
+  ]);
+
+  const monthlyAggregation = await Task.aggregate([
+    {
+      $match: {
+        clientId: clientObjectId,
+        createdAt: { $gte: startOfYear, $lte: endOfYear },
+      },
+    },
+    {
+      $group: {
+        _id: { month: { $month: "$createdAt" } },
+        total: { $sum: 1 },
+        pending: {
+          $sum: {
+            $cond: [{ $ne: ["$reportIsApproved", true] }, 1, 0],
+          },
+        },
+        verified: {
+          $sum: {
+            $cond: [{ $eq: ["$reportIsApproved", true] }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+
+  const monthlyTasks = monthNames.map((name) => ({
+    month: name,
+    pending: 0,
+    verified: 0,
+    total: 0,
+  }));
+
+  monthlyAggregation.forEach(({ _id, total, pending, verified }) => {
+    const idx = _id.month - 1;
+    monthlyTasks[idx].total = total;
+    monthlyTasks[idx].pending = pending;
+    monthlyTasks[idx].verified = verified;
+  });
+
+  return {
+    totalRequest,
+    totalPending,
+    totalVerified,
+    monthlyTasks,
+  };
+}
+
 const getDashboardStats = async (req, res) => {
   try {
     const clientId = req.user.id;
@@ -419,71 +503,7 @@ const getDashboardStats = async (req, res) => {
         .select(APPROVED_REPORT_TASK_SELECT),
     ]);
 
-    const [totalPending, totalVerified] = await Promise.all([
-      Task.countDocuments({ clientId, status: "pending" }),
-      Task.countDocuments({ clientId, status: "completed" }),
-    ]);
-
-    // Monthly breakdown
-    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
-    const endOfYear = new Date(
-      new Date().getFullYear(),
-      11,
-      31,
-      23,
-      59,
-      59,
-      999
-    );
-
-    const monthlyAggregation = await Task.aggregate([
-      {
-        $match: {
-          clientId: new mongoose.Types.ObjectId(clientId),
-          createdAt: { $gte: startOfYear, $lte: endOfYear },
-          status: { $in: ["pending", "completed"] },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$createdAt" },
-            status: "$status",
-          },
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const monthNames = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-
-    const monthlyStats = monthNames.map((name, index) => ({
-      month: name,
-      pending: 0,
-      verified: 0,
-      total: 0,
-    }));
-
-    monthlyAggregation.forEach(({ _id, count }) => {
-      const idx = _id.month - 1;
-      if (_id.status === "pending") monthlyStats[idx].pending += count;
-      if (_id.status === "completed") monthlyStats[idx].verified += count;
-      monthlyStats[idx].total += count;
-    });
-
+    const uploadHistoryStats = await getClientUploadHistoryStats(clientId);
 
     const formattedTasks = reportTasks.map(formatApprovedReportTask);
 
@@ -494,11 +514,11 @@ const getDashboardStats = async (req, res) => {
         totalVerifiedFiles,
         totalComplaints,
         uploads: taskFiles, // For the table
-        reports: formattedTasks, 
-        totalRequest: totalPending + totalVerified,
-        totalPending,
-        totalVerified,
-        monthlyTasks: monthlyStats, // For graph
+        reports: formattedTasks,
+        totalRequest: uploadHistoryStats.totalRequest,
+        totalPending: uploadHistoryStats.totalPending,
+        totalVerified: uploadHistoryStats.totalVerified,
+        monthlyTasks: uploadHistoryStats.monthlyTasks, // For graph
       },
     });
   } catch (err) {
@@ -627,81 +647,15 @@ const getAllUploads = async (req, res) => {
 const getAnalytics = async (req, res) => {
   try {
     const clientId = req.user.id;
-
-    const [totalPending, totalVerified] = await Promise.all([
-      Task.countDocuments({ clientId, status: "pending" }),
-      Task.countDocuments({ clientId, status: "completed" }),
-    ]);
-
-    // 2. Monthly breakdown
-    const startOfYear = new Date(new Date().getFullYear(), 0, 1);
-    const endOfYear = new Date(
-      new Date().getFullYear(),
-      11,
-      31,
-      23,
-      59,
-      59,
-      999
-    );
-
-    const monthlyAggregation = await Task.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfYear, $lte: endOfYear },
-          status: { $in: ["pending", "completed"] },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$createdAt" },
-            status: "$status",
-          },
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    // Month map
-    const monthNames = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-
-    // Initialize all 12 months
-    const monthlyStats = monthNames.map((name, index) => ({
-      month: name,
-      pending: 0,
-      verified: 0,
-      total: 0,
-    }));
-
-    // Fill counts
-    monthlyAggregation.forEach(({ _id, count }) => {
-      const idx = _id.month - 1;
-      if (_id.status === "pending") monthlyStats[idx].pending += count;
-      if (_id.status === "completed") monthlyStats[idx].verified += count;
-      monthlyStats[idx].total += count;
-    });
+    const uploadHistoryStats = await getClientUploadHistoryStats(clientId);
 
     res.status(200).json({
       success: true,
       data: {
-        totalRequest: totalPending + totalVerified,
-        totalPending,
-        totalVerified,
-        monthlyTasks: monthlyStats, // for graph
+        totalRequest: uploadHistoryStats.totalRequest,
+        totalPending: uploadHistoryStats.totalPending,
+        totalVerified: uploadHistoryStats.totalVerified,
+        monthlyTasks: uploadHistoryStats.monthlyTasks,
       },
     });
   } catch (err) {
