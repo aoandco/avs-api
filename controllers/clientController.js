@@ -527,15 +527,71 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
+function parseApprovedReportsPagination(query) {
+  const skipParam = parseInt(query.skip, 10);
+  const skip = Number.isFinite(skipParam) && skipParam >= 0 ? skipParam : 0;
+  const limitParam = query.limit;
+
+  if (
+    limitParam === undefined ||
+    limitParam === null ||
+    String(limitParam).trim() === ""
+  ) {
+    return { skip, limit: 25, fetchAll: false };
+  }
+
+  const normalizedLimit = String(limitParam).trim().toLowerCase();
+  if (normalizedLimit === "all" || normalizedLimit === "-1") {
+    return { skip: 0, limit: null, fetchAll: true };
+  }
+
+  const limit = parseInt(limitParam, 10);
+  if (![25, 50, 100].includes(limit)) {
+    return {
+      error: 'Invalid limit. Use 25, 50, 100, or "all".',
+    };
+  }
+
+  return { skip, limit, fetchAll: false };
+}
+
 const getApprovedReports = async (req, res) => {
   try {
     const clientId = req.user.id;
     const { fileName, taskUploadId } = req.query;
+    const pagination = parseApprovedReportsPagination(req.query);
+
+    if (pagination.error) {
+      return res.status(400).json({
+        success: false,
+        message: pagination.error,
+      });
+    }
+
+    const { skip, limit, fetchAll } = pagination;
 
     const filter = {
       clientId,
       reportIsApproved: true,
       "feedback.reportUrl": { $ne: null },
+    };
+
+    const emptyUploadResponse = async () => {
+      const uploadFiles = await TaskUpload.find({ clientId })
+        .select("fileName uploadedAt")
+        .sort({ uploadedAt: -1 });
+
+      return res.status(200).json({
+        success: true,
+        message: "No approved reports found for the selected upload file.",
+        total: 0,
+        skip: 0,
+        limit: fetchAll ? null : limit,
+        data: {
+          uploads: uploadFiles,
+          reports: [],
+        },
+      });
     };
 
     if (taskUploadId) {
@@ -554,29 +610,24 @@ const getApprovedReports = async (req, res) => {
 
       const uploadIds = uploads.map((upload) => upload._id);
       if (uploadIds.length === 0) {
-        const uploadFiles = await TaskUpload.find({ clientId })
-          .select("fileName uploadedAt")
-          .sort({ uploadedAt: -1 });
-
-        return res.status(200).json({
-          success: true,
-          message: "No approved reports found for the selected upload file.",
-          total: 0,
-          data: {
-            uploads: uploadFiles,
-            reports: [],
-          },
-        });
+        return emptyUploadResponse();
       }
 
       filter.taskUploadId = { $in: uploadIds };
     }
 
-    const [reports, uploads] = await Promise.all([
-      Task.find(filter)
-        .populate({ path: "taskUploadId", select: "fileName uploadedAt" })
-        .sort({ createdAt: -1 })
-        .select(APPROVED_REPORT_TASK_SELECT),
+    const reportsQuery = Task.find(filter)
+      .populate({ path: "taskUploadId", select: "fileName uploadedAt" })
+      .sort({ createdAt: -1 })
+      .select(APPROVED_REPORT_TASK_SELECT);
+
+    if (!fetchAll) {
+      reportsQuery.skip(skip).limit(limit);
+    }
+
+    const [reports, total, uploads] = await Promise.all([
+      reportsQuery.exec(),
+      Task.countDocuments(filter),
       TaskUpload.find({ clientId })
         .select("fileName uploadedAt")
         .sort({ uploadedAt: -1 }),
@@ -585,7 +636,9 @@ const getApprovedReports = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Approved reports retrieved",
-      total: reports.length,
+      total,
+      skip: fetchAll ? 0 : skip,
+      limit: fetchAll ? null : limit,
       data: {
         uploads,
         reports: reports.map(formatApprovedReportTask),
