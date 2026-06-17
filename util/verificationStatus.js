@@ -72,6 +72,18 @@ function getApprovalFilter(approvalFilter) {
     return { reportIsApproved: { $ne: true } };
   }
 
+  if (normalized === "approval-success") {
+    return buildApprovedVerificationFilter("success");
+  }
+
+  if (normalized === "approval-failed") {
+    return buildApprovedVerificationFilter("failed");
+  }
+
+  if (normalized === "approval-returned") {
+    return buildApprovedVerificationFilter("returned");
+  }
+
   return null;
 }
 

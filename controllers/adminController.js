@@ -47,8 +47,8 @@ async function getClientIdsForCompanyFilter(companyNameFilter) {
 const listTasks = async (req, res) => {
   try {
     const {
-      statusFilter = "all",
-      approvalFilter = "all",
+      statusFilter,
+      approvalFilter,
       verificationFilter = "all",
       state,
       startDate,
@@ -56,23 +56,18 @@ const listTasks = async (req, res) => {
       search,
       companyNameFilter = "all",
     } = req.query;
-    const normalizedStatusFilter = String(statusFilter || "").trim().toLowerCase();
-    const normalizedApprovalFilter = String(approvalFilter || "all")
+    const normalizedApprovalFilter = String(approvalFilter ?? "all")
       .trim()
       .toLowerCase();
+    const statusFilterProvided =
+      statusFilter !== undefined && String(statusFilter).trim() !== "";
+    const normalizedStatusFilter = statusFilterProvided
+      ? String(statusFilter).trim().toLowerCase()
+      : null;
     const normalizedVerificationFilter = String(verificationFilter || "all")
       .trim()
       .toLowerCase();
-
-    const approvalStatusMap = {
-      approved: { reportIsApproved: true },
-      unapproved: { reportIsApproved: { $ne: true } },
-      "approval-success": buildApprovedVerificationFilter("success"),
-      "approval-failed": buildApprovedVerificationFilter("failed"),
-      "approval-returned": buildApprovedVerificationFilter("returned"),
-    };
-
-    const approvalStatusFilter = approvalStatusMap[normalizedStatusFilter];
+    const approvalActive = normalizedApprovalFilter !== "all";
 
     const statusMap = {
       pending: ["pending"],
@@ -85,25 +80,24 @@ const listTasks = async (req, res) => {
       all: ["pending", "incomplete", "assigned", "completed", "over-due"],
     };
 
-    if (!approvalStatusFilter) {
-      const allowedStatuses = statusMap[normalizedStatusFilter];
+    if (approvalActive) {
+      if (!getApprovalFilter(normalizedApprovalFilter)) {
+        return res.status(400).json({
+          success: false,
+          message:
+            'Invalid approvalFilter. Use "approved", "unapproved", "approval-success", "approval-failed", or "approval-returned".',
+        });
+      }
+    } else {
+      const effectiveStatusFilter = normalizedStatusFilter ?? "all";
+      const allowedStatuses = statusMap[effectiveStatusFilter];
       if (!allowedStatuses) {
         return res.status(400).json({
           success: false,
           message:
-            'Invalid status. Use "assigned", "incomplete", "inProgress", "completed", "pending", "overdue", "approved", "unapproved", "approval-success", "approval-failed", "approval-returned", or "all"',
+            'Invalid status. Use "assigned", "incomplete", "inProgress", "completed", "pending", "overdue", or "all"',
         });
       }
-    }
-
-    if (
-      normalizedApprovalFilter !== "all" &&
-      !getApprovalFilter(normalizedApprovalFilter)
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid approvalFilter. Use "all", "approved", or "unapproved".',
-      });
     }
 
     if (
@@ -118,16 +112,13 @@ const listTasks = async (req, res) => {
     }
 
     // === Build Filter Object ===
-    const filter = approvalStatusFilter
-      ? { ...approvalStatusFilter }
+    const filter = approvalActive
+      ? { ...getApprovalFilter(normalizedApprovalFilter) }
       : {
-          status: { $in: statusMap[normalizedStatusFilter] },
+          status: {
+            $in: statusMap[normalizedStatusFilter ?? "all"],
+          },
         };
-
-    const standaloneApprovalFilter = getApprovalFilter(normalizedApprovalFilter);
-    if (standaloneApprovalFilter) {
-      Object.assign(filter, standaloneApprovalFilter);
-    }
 
     const standaloneVerificationFilter = getVerificationStatusFilter(
       normalizedVerificationFilter
