@@ -23,6 +23,10 @@ const taskUploadSchema = new mongoose.Schema({
   uploadedAt: {
     type: Date,
     default: Date.now
+  },
+  activityIds: {
+    type: [String],
+    default: [],
   }
 });
 

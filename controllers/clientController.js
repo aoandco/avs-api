@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require("uuid");
 const cloudinary = require("../config/cloudinary");
 const { updateClientProfileSchema } = require("../util/validationSchemas");
 const XLSX = require("xlsx");
+const axios = require("axios");
 const fs = require("fs/promises");
 const TaskUpload = require("../model/TaskUpload");
 const Complaint = require("../model/Complaint");
@@ -118,6 +119,78 @@ const getExcelCell = (row, ...keys) => {
   return undefined;
 };
 
+function extractActivityIdsFromExcelRows(rows) {
+  const activityIds = [];
+
+  for (const row of rows) {
+    const activityId = getExcelCell(
+      row,
+      "Activity id",
+      "Activity Id",
+      "ActivityID",
+      "activityId"
+    );
+    if (activityId) {
+      activityIds.push(activityId);
+    }
+  }
+
+  return activityIds;
+}
+
+async function resolveUploadActivityIds(upload) {
+  if (upload.activityIds?.length) {
+    return upload.activityIds;
+  }
+
+  if (!upload.taskUrl) {
+    return [];
+  }
+
+  try {
+    const response = await axios.get(upload.taskUrl, {
+      responseType: "arraybuffer",
+    });
+    const workbook = XLSX.read(response.data, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+    const activityIds = extractActivityIdsFromExcelRows(rows);
+
+    if (activityIds.length) {
+      await TaskUpload.updateOne(
+        { _id: upload._id },
+        { $set: { activityIds } }
+      );
+    }
+
+    return activityIds;
+  } catch (err) {
+    console.error("Failed to resolve upload activity IDs:", err);
+    return [];
+  }
+}
+
+async function applyTaskUploadFilter(filter, clientId, uploads) {
+  if (!uploads.length) {
+    return false;
+  }
+
+  const activityIdSets = await Promise.all(
+    uploads.map((upload) => resolveUploadActivityIds(upload))
+  );
+  const activityIds = [...new Set(activityIdSets.flat())];
+
+  if (activityIds.length) {
+    filter.activityId = { $in: activityIds };
+    return true;
+  }
+
+  filter.taskUploadId = {
+    $in: uploads.map((upload) => upload._id),
+  };
+  return true;
+}
+
 const uploadTasksFromExcel = async (req, res) => {
   try {
     const clientId = req.user.id;
@@ -208,10 +281,9 @@ const uploadTasksFromExcel = async (req, res) => {
       });
     }
 
-    // 2. Save tasks
-    await Task.insertMany(tasks, { ordered: false });
+    const activityIds = tasks.map((task) => task.activityId);
 
-    // 3. Upload the Excel sheet to Cloudinary
+    // Upload the Excel sheet to Cloudinary before persisting tasks
     const cloudinaryRes = await cloudinary.uploader.upload(filePath, {
       public_id: fileName,
       folder: "tasks/excel",
@@ -221,20 +293,30 @@ const uploadTasksFromExcel = async (req, res) => {
 
     const taskUrl = cloudinaryRes.secure_url;
 
-    // 4. Store the uploaded Excel file URL
     const taskUpload = await TaskUpload.create({
       clientId,
       taskUrl,
       fileName: originalFileName,
+      activityIds,
     });
 
-    const activityIds = tasks.map((task) => task.activityId);
+    const tasksWithUpload = tasks.map((task) => ({
+      ...task,
+      taskUploadId: taskUpload._id,
+    }));
+
+    await Task.insertMany(tasksWithUpload, { ordered: false });
+
     await Task.updateMany(
-      { clientId, activityId: { $in: activityIds } },
+      {
+        clientId,
+        activityId: { $in: activityIds },
+        $or: [{ taskUploadId: null }, { taskUploadId: { $exists: false } }],
+      },
       { $set: { taskUploadId: taskUpload._id } }
     );
 
-    // 5. Cleanup
+    // Cleanup
     await fs.unlink(filePath);
 
     res.status(200).json({
@@ -601,19 +683,34 @@ const getApprovedReports = async (req, res) => {
           message: "Invalid taskUploadId.",
         });
       }
-      filter.taskUploadId = new mongoose.Types.ObjectId(taskUploadId);
+
+      const upload = await TaskUpload.findOne({
+        _id: taskUploadId,
+        clientId,
+      });
+
+      if (!upload) {
+        return emptyUploadResponse();
+      }
+
+      const applied = await applyTaskUploadFilter(filter, clientId, [upload]);
+      if (!applied) {
+        return emptyUploadResponse();
+      }
     } else if (fileName && String(fileName).trim()) {
       const uploads = await TaskUpload.find({
         clientId,
         fileName: { $regex: String(fileName).trim(), $options: "i" },
-      }).select("_id");
+      });
 
-      const uploadIds = uploads.map((upload) => upload._id);
-      if (uploadIds.length === 0) {
+      if (uploads.length === 0) {
         return emptyUploadResponse();
       }
 
-      filter.taskUploadId = { $in: uploadIds };
+      const applied = await applyTaskUploadFilter(filter, clientId, uploads);
+      if (!applied) {
+        return emptyUploadResponse();
+      }
     }
 
     const reportsQuery = Task.find(filter)
