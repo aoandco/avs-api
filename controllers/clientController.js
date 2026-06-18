@@ -170,7 +170,7 @@ async function resolveUploadActivityIds(upload) {
   }
 }
 
-async function applyTaskUploadFilter(filter, clientId, uploads) {
+async function applyTaskUploadFilter(filter, uploads) {
   if (!uploads.length) {
     return false;
   }
@@ -179,16 +179,89 @@ async function applyTaskUploadFilter(filter, clientId, uploads) {
     uploads.map((upload) => resolveUploadActivityIds(upload))
   );
   const activityIds = [...new Set(activityIdSets.flat())];
+  const uploadIds = uploads.map((upload) => upload._id);
+  const uploadMatch = [];
+
+  if (uploadIds.length) {
+    uploadMatch.push({ taskUploadId: { $in: uploadIds } });
+  }
 
   if (activityIds.length) {
-    filter.activityId = { $in: activityIds };
+    uploadMatch.push({ activityId: { $in: activityIds } });
+  }
+
+  if (!uploadMatch.length) {
+    return false;
+  }
+
+  if (uploadMatch.length === 1) {
+    Object.assign(filter, uploadMatch[0]);
     return true;
   }
 
-  filter.taskUploadId = {
-    $in: uploads.map((upload) => upload._id),
-  };
+  filter.$or = uploadMatch;
   return true;
+}
+
+function applyDateRangeFilter(filter, startDate, endDate, field) {
+  if (!startDate && !endDate) {
+    return null;
+  }
+
+  const range = {};
+
+  if (startDate) {
+    const start = new Date(startDate);
+    if (Number.isNaN(start.getTime())) {
+      return { error: "Invalid startDate." };
+    }
+    start.setUTCHours(0, 0, 0, 0);
+    range.$gte = start;
+  }
+
+  if (endDate) {
+    const end = new Date(endDate);
+    if (Number.isNaN(end.getTime())) {
+      return { error: "Invalid endDate." };
+    }
+    end.setUTCHours(23, 59, 59, 999);
+    range.$lte = end;
+  }
+
+  if (range.$gte && range.$lte && range.$gte.getTime() > range.$lte.getTime()) {
+    return { error: "startDate cannot be after endDate." };
+  }
+
+  filter[field] = range;
+  return null;
+}
+
+function resolveApprovedReportsDateField(dateFilter) {
+  const normalized = String(dateFilter || "taskCreated").trim().toLowerCase();
+
+  if (
+    normalized === "taskcreated" ||
+    normalized === "task_created" ||
+    normalized === "createdat"
+  ) {
+    return { field: "createdAt" };
+  }
+
+  if (
+    normalized === "reportcreated" ||
+    normalized === "report_created" ||
+    normalized === "receiveddate"
+  ) {
+    return { field: "feedback.receivedDate" };
+  }
+
+  return {
+    error: 'Invalid dateFilter. Use "taskCreated" or "reportCreated".',
+  };
+}
+
+function applyDirectSubmissionFilter(filter) {
+  filter.$or = [{ taskUploadId: null }, { taskUploadId: { $exists: false } }];
 }
 
 const uploadTasksFromExcel = async (req, res) => {
@@ -640,7 +713,8 @@ function parseApprovedReportsPagination(query) {
 const getApprovedReports = async (req, res) => {
   try {
     const clientId = req.user.id;
-    const { fileName, taskUploadId, startDate, endDate } = req.query;
+    const { fileName, taskUploadId, startDate, endDate, dateFilter } = req.query;
+    const normalizedTaskUploadId = String(taskUploadId ?? "").trim();
     const pagination = parseApprovedReportsPagination(req.query);
 
     if (pagination.error) {
@@ -676,8 +750,10 @@ const getApprovedReports = async (req, res) => {
       });
     };
 
-    if (taskUploadId) {
-      if (!mongoose.Types.ObjectId.isValid(taskUploadId)) {
+    if (normalizedTaskUploadId === "none") {
+      applyDirectSubmissionFilter(filter);
+    } else if (normalizedTaskUploadId) {
+      if (!mongoose.Types.ObjectId.isValid(normalizedTaskUploadId)) {
         return res.status(400).json({
           success: false,
           message: "Invalid taskUploadId.",
@@ -685,7 +761,7 @@ const getApprovedReports = async (req, res) => {
       }
 
       const upload = await TaskUpload.findOne({
-        _id: taskUploadId,
+        _id: normalizedTaskUploadId,
         clientId,
       });
 
@@ -693,7 +769,7 @@ const getApprovedReports = async (req, res) => {
         return emptyUploadResponse();
       }
 
-      const applied = await applyTaskUploadFilter(filter, clientId, [upload]);
+      const applied = await applyTaskUploadFilter(filter, [upload]);
       if (!applied) {
         return emptyUploadResponse();
       }
@@ -707,26 +783,31 @@ const getApprovedReports = async (req, res) => {
         return emptyUploadResponse();
       }
 
-      const applied = await applyTaskUploadFilter(filter, clientId, uploads);
+      const applied = await applyTaskUploadFilter(filter, uploads);
       if (!applied) {
         return emptyUploadResponse();
       }
     }
 
-    if (startDate || endDate) {
-      filter.createdAt = {};
+    const dateFieldResult = resolveApprovedReportsDateField(dateFilter);
+    if (dateFieldResult.error) {
+      return res.status(400).json({
+        success: false,
+        message: dateFieldResult.error,
+      });
+    }
 
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        filter.createdAt.$gte = start;
-      }
-
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = end;
-      }
+    const dateFilterError = applyDateRangeFilter(
+      filter,
+      startDate,
+      endDate,
+      dateFieldResult.field
+    );
+    if (dateFilterError?.error) {
+      return res.status(400).json({
+        success: false,
+        message: dateFilterError.error,
+      });
     }
 
     const reportsQuery = Task.find(filter)
