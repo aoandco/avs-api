@@ -21,6 +21,10 @@ const {
 } = require("../util/verificationStatus");
 const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
 const { WEMA_COMPANY_NAME, isWemaClient } = require("../util/clientConstants");
+const {
+  applyDateRangeFilter,
+  resolveTaskDateFilterField,
+} = require("../util/dateFilter");
 
 async function getClientIdsForCompanyFilter(companyNameFilter) {
   const normalized = String(companyNameFilter || "all").trim().toLowerCase();
@@ -53,6 +57,7 @@ const listTasks = async (req, res) => {
       state,
       startDate,
       endDate,
+      dateFilter,
       search,
       companyNameFilter = "all",
     } = req.query;
@@ -132,18 +137,32 @@ const listTasks = async (req, res) => {
     }
 
     if (startDate || endDate) {
-      filter.createdAt = {};
+      const isCompletedStatusFilter =
+        !approvalActive && normalizedStatusFilter === "completed";
+      let dateField = "createdAt";
 
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        filter.createdAt.$gte = start;
+      if (isCompletedStatusFilter) {
+        const dateFieldResult = resolveTaskDateFilterField(dateFilter);
+        if (dateFieldResult.error) {
+          return res.status(400).json({
+            success: false,
+            message: dateFieldResult.error,
+          });
+        }
+        dateField = dateFieldResult.field;
       }
 
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = end;
+      const dateFilterError = applyDateRangeFilter(
+        filter,
+        startDate,
+        endDate,
+        dateField
+      );
+      if (dateFilterError?.error) {
+        return res.status(400).json({
+          success: false,
+          message: dateFilterError.error,
+        });
       }
     }
 

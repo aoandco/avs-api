@@ -17,6 +17,10 @@ const {
   formatApprovedReportTask,
   APPROVED_REPORT_TASK_SELECT,
 } = require("../util/formatApprovedReport");
+const {
+  applyDateRangeFilter,
+  resolveTaskDateFilterField,
+} = require("../util/dateFilter");
 
 const generateClientApiKey = async (req, res) => {
   try {
@@ -201,63 +205,6 @@ async function applyTaskUploadFilter(filter, uploads) {
 
   filter.$or = uploadMatch;
   return true;
-}
-
-function applyDateRangeFilter(filter, startDate, endDate, field) {
-  if (!startDate && !endDate) {
-    return null;
-  }
-
-  const range = {};
-
-  if (startDate) {
-    const start = new Date(startDate);
-    if (Number.isNaN(start.getTime())) {
-      return { error: "Invalid startDate." };
-    }
-    start.setUTCHours(0, 0, 0, 0);
-    range.$gte = start;
-  }
-
-  if (endDate) {
-    const end = new Date(endDate);
-    if (Number.isNaN(end.getTime())) {
-      return { error: "Invalid endDate." };
-    }
-    end.setUTCHours(23, 59, 59, 999);
-    range.$lte = end;
-  }
-
-  if (range.$gte && range.$lte && range.$gte.getTime() > range.$lte.getTime()) {
-    return { error: "startDate cannot be after endDate." };
-  }
-
-  filter[field] = range;
-  return null;
-}
-
-function resolveApprovedReportsDateField(dateFilter) {
-  const normalized = String(dateFilter || "taskCreated").trim().toLowerCase();
-
-  if (
-    normalized === "taskcreated" ||
-    normalized === "task_created" ||
-    normalized === "createdat"
-  ) {
-    return { field: "createdAt" };
-  }
-
-  if (
-    normalized === "reportcreated" ||
-    normalized === "report_created" ||
-    normalized === "receiveddate"
-  ) {
-    return { field: "feedback.receivedDate" };
-  }
-
-  return {
-    error: 'Invalid dateFilter. Use "taskCreated" or "reportCreated".',
-  };
 }
 
 function applyDirectSubmissionFilter(filter) {
@@ -789,7 +736,7 @@ const getApprovedReports = async (req, res) => {
       }
     }
 
-    const dateFieldResult = resolveApprovedReportsDateField(dateFilter);
+    const dateFieldResult = resolveTaskDateFilterField(dateFilter);
     if (dateFieldResult.error) {
       return res.status(400).json({
         success: false,
