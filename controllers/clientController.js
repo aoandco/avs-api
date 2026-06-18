@@ -640,7 +640,7 @@ function parseApprovedReportsPagination(query) {
 const getApprovedReports = async (req, res) => {
   try {
     const clientId = req.user.id;
-    const { fileName, taskUploadId } = req.query;
+    const { fileName, taskUploadId, startDate, endDate } = req.query;
     const pagination = parseApprovedReportsPagination(req.query);
 
     if (pagination.error) {
@@ -710,6 +710,22 @@ const getApprovedReports = async (req, res) => {
       const applied = await applyTaskUploadFilter(filter, clientId, uploads);
       if (!applied) {
         return emptyUploadResponse();
+      }
+    }
+
+    if (startDate || endDate) {
+      filter.createdAt = {};
+
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        filter.createdAt.$gte = start;
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
       }
     }
 
