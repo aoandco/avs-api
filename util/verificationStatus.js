@@ -7,9 +7,12 @@ function isReturnedVerificationTask(task) {
 }
 
 function mapVerificationStatus(task) {
-  if (task.status === "completed") return 2; // Success
+  if (task.status === "completed"
+    && task.feedback?.addressExistence === "Yes" &&
+    task.feedback?.customerResident === "Yes"
+  ) return 2; // Success
   if (
-    task.status === "incomplete" &&
+    task.status === "completed" &&
      task.feedback?.addressExistence === "Yes" &&
     task.feedback?.customerResident === "No"
    
@@ -29,13 +32,15 @@ const VERIFICATION_RETURNED_QUERY = {
 };
 
 const VERIFICATION_FAILED_QUERY = {
-  status: "incomplete",
+  status: "completed",
  "feedback.customerResident": "No",
  "feedback.addressExistence": "Yes",
 };
 
 const VERIFICATION_SUCCESS_QUERY = {
   status: "completed",
+  "feedback.customerResident": "Yes",
+  "feedback.addressExistence": "Yes",
 };
 
 const VERIFICATION_FILTER_MAP = {
