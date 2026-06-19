@@ -137,11 +137,12 @@ const listTasks = async (req, res) => {
     }
 
     if (startDate || endDate) {
-      const isCompletedStatusFilter =
-        !approvalActive && normalizedStatusFilter === "completed";
+      const useDateFilterType =
+        approvalActive ||
+        (!approvalActive && normalizedStatusFilter === "completed");
       let dateField = "createdAt";
 
-      if (isCompletedStatusFilter) {
+      if (useDateFilterType) {
         const dateFieldResult = resolveTaskDateFilterField(dateFilter);
         if (dateFieldResult.error) {
           return res.status(400).json({

@@ -1,3 +1,11 @@
+function isReturnedVerificationTask(task) {
+  return (
+    task.status === "incomplete" &&
+    task.feedback?.addressExistence === "No" &&
+    task.feedback?.customerResident === "No"
+  );
+}
+
 function mapVerificationStatus(task) {
   if (task.status === "completed") return 2; // Success
   if (
@@ -8,11 +16,7 @@ function mapVerificationStatus(task) {
   ) {
     return 3; // Failed
   }
-  if (
-    task.status === "incomplete" &&
-    task.feedback?.addressExistence === "No" &&
-    task.feedback?.customerResident === "No"
-  ) {
+  if (isReturnedVerificationTask(task)) {
     return 4; // Returned
   }
   return 4;
@@ -102,6 +106,7 @@ function buildApprovedVerificationFilter(verificationFilter, baseFilter = {}) {
 
 module.exports = {
   mapVerificationStatus,
+  isReturnedVerificationTask,
   getVerificationStatusFilter,
   getApprovalFilter,
   buildApprovedVerificationFilter,
