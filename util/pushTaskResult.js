@@ -97,6 +97,8 @@ async function pushTaskResultToClient(task, client, options = {}) {
     });
   }
 
+  const createdAtFallback = task.createdAt;
+
   // Wema API binds:
   // - "request" (vendor metadata) at root
   // - "addressVerificationResponses" at root (see $.addressVerificationResponses[0].address in errors)
@@ -104,7 +106,7 @@ async function pushTaskResultToClient(task, client, options = {}) {
     activityId: task.activityId,
     customerName: asString(task.customerName, ""),
     address,
-    visitDate: toIsoDate(task.visitDate),
+    visitDate: toIsoDate(task.visitDate) ?? toIsoDate(createdAtFallback),
     addressExists: task.feedback?.addressExistence === "Yes",
     isResidentialAddress: task.feedback?.addressResidential === "Yes",
     isCustomerResidence: task.feedback?.customerResident === "Yes",
@@ -117,7 +119,8 @@ async function pushTaskResultToClient(task, client, options = {}) {
     easeOfLocation: asString(task.feedback?.easeOfLocation, "N/A"),
     comments: asString(task.feedback?.comments, ""),
     additionalComments: asString(task.feedback?.additionalComments, "N/A"),
-    receivedDate: toIsoDate(task.feedback?.receivedDate),
+    receivedDate:
+      toIsoDate(task.feedback?.receivedDate) ?? toIsoDate(createdAtFallback),
     metOthers: task.feedback?.personMetOthers === "Yes",
     verificationStatus: mapVerificationStatus(task),
     addressMedia:
