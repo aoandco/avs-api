@@ -179,6 +179,10 @@ const listTasks = async (req, res) => {
         select: "companyName email"
       })
       .populate({
+        path: "taskUploadId",
+        select: "fileName uploadedAt"
+      })
+      .populate({
         path: "agentId",
         select: "fullName email phoneNumber"
       })
@@ -207,8 +211,17 @@ const listTasks = async (req, res) => {
             as: "agent"
           }
         },
+        {
+          $lookup: {
+            from: "taskuploads",
+            localField: "taskUploadId",
+            foreignField: "_id",
+            as: "taskUpload"
+          }
+        },
          { $unwind: { path: "$client", preserveNullAndEmptyArrays: true } },
          { $unwind: { path: "$agent", preserveNullAndEmptyArrays: true } },
+         { $unwind: { path: "$taskUpload", preserveNullAndEmptyArrays: true } },
         {
           $match: {
             $or: [
