@@ -1,4 +1,5 @@
 const express = require("express");
+const { uploadExcel } = require("../util/multer");
 const router = express.Router();
 const { authenticate, authorizeAdmin } = require("../authentication/auth");
 const {
@@ -16,6 +17,7 @@ const {
      getAnalytics,
      deleteTask,
      deleteAllTasks,
+     recoverTasksFromExcel,
      rejectTask,
      approveTaskReport,
      getTaskSummaryByMonth,
@@ -39,6 +41,11 @@ router.post("/update-file-status/:fileId", authenticate,authorizeAdmin, updateFi
 router.post("/delete-file/:fileId", authenticate,authorizeAdmin, deleteFileUpload);
 router.post("/delete-task/:taskId", authenticate,authorizeAdmin, deleteTask);
 router.post("/tasks/all", authenticate, authorizeAdmin, deleteAllTasks);
+router.post(
+  "/recover-tasks-from-excel",
+  uploadExcel,
+  recoverTasksFromExcel
+);
 router.post("/approve-report", approveTaskReport);
 router.post("/reject-task/:taskId", authenticate,authorizeAdmin, rejectTask);
 router.get("/task-analytics", authenticate,authorizeAdmin, getAnalytics);

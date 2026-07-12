@@ -25,6 +25,11 @@ const {
   applyDateRangeFilter,
   resolveTaskDateFilterField,
 } = require("../util/dateFilter");
+const {
+  DEFAULT_RECOVERY_CLIENT_ID,
+  DEFAULT_RECOVERY_AGENT_ID,
+  parseTaskRecoveryRows,
+} = require("../util/parseTaskRecoveryExcel");
 
 async function getClientIdsForCompanyFilter(companyNameFilter) {
   const normalized = String(companyNameFilter || "all").trim().toLowerCase();
@@ -1135,6 +1140,199 @@ const deleteAllTasks = async (req, res) => {
   }
 };
 
+const recoverTasksFromExcel = async (req, res) => {
+  let filePath;
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel file is required. Upload using form field name 'file'.",
+      });
+    }
+
+    filePath = req.file.path;
+    const dryRun = String(req.query.dryRun || req.body.dryRun || "")
+      .trim()
+      .toLowerCase() === "true";
+
+    const clientId = req.body.clientId || DEFAULT_RECOVERY_CLIENT_ID;
+    const agentId = req.body.agentId || DEFAULT_RECOVERY_AGENT_ID;
+
+    if (!mongoose.Types.ObjectId.isValid(clientId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid clientId.",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(agentId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid agentId.",
+      });
+    }
+
+    const [client, agent] = await Promise.all([
+      Client.findById(clientId).select("_id companyName"),
+      Agent.findById(agentId).select("_id fullName"),
+    ]);
+
+    if (!client) {
+      return res.status(404).json({
+        success: false,
+        message: "Client not found.",
+      });
+    }
+
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        message: "Agent not found.",
+      });
+    }
+
+    const workbook = XLSX.readFile(filePath);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet);
+
+    if (!rows.length) {
+      return res.status(400).json({
+        success: false,
+        message: "The Excel sheet is empty.",
+      });
+    }
+
+    const { parsed, invalid } = parseTaskRecoveryRows(rows, {
+      clientId,
+      agentId,
+    });
+
+    if (!parsed.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No recoverable task rows found in the Excel file.",
+        totalRows: rows.length,
+        invalidRows: invalid,
+      });
+    }
+
+    const activityIds = parsed.map((item) => item.activityId);
+    const existingTasks = await Task.find({
+      activityId: { $in: activityIds },
+    }).select("activityId cif");
+
+    const existingActivityIds = new Set(
+      existingTasks.map((task) => task.activityId)
+    );
+    const existingCifs = new Set(
+      existingTasks.map((task) => task.cif).filter(Boolean)
+    );
+
+    const results = {
+      inserted: [],
+      skippedDuplicates: [],
+      failed: [],
+    };
+
+    const usedCifs = new Set(existingCifs);
+
+    for (const item of parsed) {
+      const { taskDoc, activityId, cif, rowNumber } = item;
+
+      if (existingActivityIds.has(activityId)) {
+        results.skippedDuplicates.push({
+          rowNumber,
+          activityId,
+          reason: "Task with this activityId already exists.",
+        });
+        continue;
+      }
+
+      if (cif) {
+        if (usedCifs.has(cif)) {
+          results.skippedDuplicates.push({
+            rowNumber,
+            activityId,
+            cif,
+            reason: "Task with this CIF already exists.",
+          });
+          continue;
+        }
+        usedCifs.add(cif);
+      }
+
+      if (dryRun) {
+        results.inserted.push({
+          rowNumber,
+          activityId,
+          customerName: taskDoc.customerName,
+          status: taskDoc.status,
+          reportIsApproved: taskDoc.reportIsApproved,
+        });
+        continue;
+      }
+
+      try {
+        const createdTask = await Task.create(taskDoc);
+        existingActivityIds.add(activityId);
+        results.inserted.push({
+          rowNumber,
+          _id: createdTask._id,
+          activityId: createdTask.activityId,
+          customerName: createdTask.customerName,
+          status: createdTask.status,
+        });
+      } catch (err) {
+        results.failed.push({
+          rowNumber,
+          activityId,
+          cif,
+          reason: err.message,
+        });
+      }
+    }
+
+    return res.status(dryRun ? 200 : 201).json({
+      success: true,
+      message: dryRun
+        ? "Dry run completed. No tasks were saved."
+        : "Task recovery completed.",
+      dryRun,
+      summary: {
+        totalRows: rows.length,
+        recoverableRows: parsed.length,
+        invalidRows: invalid.length,
+        insertedCount: results.inserted.length,
+        skippedDuplicateCount: results.skippedDuplicates.length,
+        failedCount: results.failed.length,
+      },
+      client: {
+        _id: client._id,
+        companyName: client.companyName,
+      },
+      agent: {
+        _id: agent._id,
+        fullName: agent.fullName,
+      },
+      invalidRows: invalid,
+      skippedDuplicates: results.skippedDuplicates,
+      failed: results.failed,
+      inserted: results.inserted,
+    });
+  } catch (err) {
+    console.error("Task recovery error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Task recovery failed.",
+    });
+  } finally {
+    if (filePath) {
+      await fs.unlink(filePath).catch(() => {});
+    }
+  }
+};
+
 const approveTaskReport = async (req, res) => {
   try {
     const { taskIds } = req.body; 
@@ -1684,6 +1882,7 @@ module.exports = {
   deleteFileUpload,
   deleteTask,
   deleteAllTasks,
+  recoverTasksFromExcel,
   approveTaskReport,
   rejectTask,
   getAnalytics,
