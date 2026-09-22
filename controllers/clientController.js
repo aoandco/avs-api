@@ -301,7 +301,49 @@ const uploadTasksFromExcel = async (req, res) => {
       });
     }
 
-    const activityIds = tasks.map((task) => task.activityId);
+    const activityIds = tasks.map((task) => task.activityId).filter(Boolean);
+    const cifValues = tasks.map((task) => task.cif).filter(Boolean);
+
+    const existingByActivity = activityIds.length
+      ? await Task.find({ activityId: { $in: activityIds } }).select(
+          "activityId cif customerName verificationAddress status createdAt"
+        )
+      : [];
+    const existingByCif = cifValues.length
+      ? await Task.find({ cif: { $in: cifValues } }).select(
+          "activityId cif customerName verificationAddress status createdAt"
+        )
+      : [];
+
+    const blockingMap = new Map();
+    for (const task of [...existingByActivity, ...existingByCif]) {
+      const key = String(task._id);
+      if (!blockingMap.has(key)) {
+        blockingMap.set(key, {
+          taskId: task._id,
+          activityId: task.activityId,
+          cif: task.cif || null,
+          customerName: task.customerName,
+          verificationAddress: task.verificationAddress,
+          status: task.status,
+          createdAt: task.createdAt,
+        });
+      }
+    }
+
+    const blockingTasks = [...blockingMap.values()];
+    if (blockingTasks.length > 0) {
+      await fs.unlink(filePath).catch(() => {});
+      return res.status(409).json({
+        success: false,
+        message:
+          "Upload blocked. One or more tasks in this file already exist. Review the list below and remove duplicates before uploading again.",
+        blockedCount: blockingTasks.length,
+        blockingTasks,
+        skippedRows,
+        totalRows: rows.length,
+      });
+    }
 
     // Upload the Excel sheet to Cloudinary before persisting tasks
     const cloudinaryRes = await cloudinary.uploader.upload(filePath, {
@@ -353,6 +395,52 @@ const uploadTasksFromExcel = async (req, res) => {
       await fs.unlink(req.file.path).catch(() => {});
     }
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const deleteClientUpload = async (req, res) => {
+  try {
+    const clientId = req.user.id;
+    const fileId = new mongoose.Types.ObjectId(req.params.fileId);
+
+    const upload = await TaskUpload.findOne({ _id: fileId, clientId });
+    if (!upload) {
+      return res.status(404).json({
+        success: false,
+        message: "Upload not found.",
+      });
+    }
+
+    const linkedTaskCount = await Task.countDocuments({
+      $or: [
+        { taskUploadId: upload._id },
+        ...(upload.activityIds?.length
+          ? [{ activityId: { $in: upload.activityIds } }]
+          : []),
+      ],
+      clientId,
+    });
+
+    if (linkedTaskCount > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot delete this upload because ${linkedTaskCount} linked task(s) still exist. Delete or reassign those tasks first.`,
+        linkedTaskCount,
+      });
+    }
+
+    await TaskUpload.findByIdAndDelete(upload._id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Upload deleted successfully.",
+    });
+  } catch (err) {
+    console.error("Delete client upload error:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
 
@@ -945,6 +1033,7 @@ module.exports = {
   generateClientApiKey,
   updateClientProfile,
   uploadTasksFromExcel,
+  deleteClientUpload,
   submitComplaint,
   fetchComplaints,
   getAllNotifications,

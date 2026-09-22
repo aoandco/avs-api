@@ -118,6 +118,9 @@ const submitTaskSchema = Joi.object({
   visitFeedback: Joi.string().required(),
   lat: Joi.number().required(),
   lng: Joi.number().required(),
+  accuracy: Joi.number().min(0).optional().allow(null),
+  isMocked: Joi.boolean().optional(),
+  locationCapturedAt: Joi.date().optional().allow(null),
   visitDate: Joi.date().required()
 });
 

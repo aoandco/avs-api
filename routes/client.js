@@ -5,7 +5,8 @@ const authenticateOrVerifyApiKey = require("../authentication/authenticateOrVeri
 const {upload, uploadExcel} = require("../util/multer");
 const { 
      updateClientProfile,
-     uploadTasksFromExcel, 
+     uploadTasksFromExcel,
+     deleteClientUpload,
      submitComplaint,
      fetchComplaints,
      getAllNotifications,
@@ -21,6 +22,7 @@ const {
 router.post("/api-key", authenticate, generateClientApiKey);
 router.post("/update-profile", authenticateOrVerifyApiKey, upload.single("profileImage"), updateClientProfile);
 router.post("/upload-tasks", authenticateOrVerifyApiKey, uploadExcel, uploadTasksFromExcel);
+router.post("/delete-upload/:fileId", authenticateOrVerifyApiKey, deleteClientUpload);
 router.post("/submit-complaint", authenticateOrVerifyApiKey, submitComplaint);
 router.get("/complaints", authenticateOrVerifyApiKey, fetchComplaints);
 router.get("/notifications", authenticateOrVerifyApiKey, getAllNotifications);

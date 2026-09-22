@@ -95,7 +95,16 @@ const taskSchema = new mongoose.Schema({
     visitFeedback: String,
     geoMapping: {
       lat: Number,
-      lng: Number
+      lng: Number,
+      accuracy: Number,
+      isMocked: { type: Boolean, default: false },
+      capturedAt: Date,
+      distanceFromAddressMeters: Number,
+      addressCoords: {
+        lat: Number,
+        lng: Number,
+      },
+      needsManualReview: { type: Boolean, default: false },
     },
     geotaggedImages: [String],
     recordedAudio: String,

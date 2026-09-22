@@ -17,16 +17,19 @@ const {
     getAllNotifications,
     getTaskHistory,
     getMonthlyTaskStats,
+    exportMyTasksExcel,
+    exportMyReportsExcel,
  } = require("../controllers/agentController");
  
 
 router.post("/update-profile", authenticate, upload.single("profileImage"), updateAgentProfile);
 router.get("/my-tasks", authenticate, getTasks);
+router.get("/export-tasks", authenticate, exportMyTasksExcel);
+router.get("/export-reports", authenticate, exportMyReportsExcel);
 router.post("/start-task/:taskId", authenticate, startTask);
 router.post("/submit-task/:taskId", authenticate, uploadTaskMedia, submitTask);
 router.post("/reject-task/:taskId", authenticate, uploadTaskMedia, rejectTask);
 router.post("/deleteAccount", deleteAccount);
-router.post("/start-task/:taskId", authenticate, startTask);
 router.get("/search-tasks", authenticate, searchTasks);
 router.get("/get-agent-dashboard", authenticate, getAgentDashboard);
 router.post("/submit-complaint", authenticate, submitComplaint);

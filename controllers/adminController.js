@@ -22,6 +22,12 @@ const {
 const { generateApiKey, hashApiKey } = require("../util/generateApiKey");
 const { WEMA_COMPANY_NAME, isWemaClient } = require("../util/clientConstants");
 const {
+  getDistanceInMeters,
+  buildGeocodeAddress,
+  geocodeAddress,
+  MAX_DISTANCE_METERS,
+} = require("../util/geoValidation");
+const {
   applyDateRangeFilter,
   resolveTaskDateFilterField,
 } = require("../util/dateFilter");
@@ -1673,23 +1679,7 @@ const getAnalytics = async (req, res) => {
 
 
 // Helper to calculate distance (Haversine formula in meters)
-const getDistanceInMeters = (coord1, coord2) => {
-  const toRad = (value) => (value * Math.PI) / 180;
-
-  const R = 6371000; // Earth radius in meters
-  const dLat = toRad(coord2.lat - coord1.lat);
-  const dLng = toRad(coord2.lng - coord1.lng);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(coord1.lat)) *
-      Math.cos(toRad(coord2.lat)) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // distance in meters
-};
+// (imported from util/geoValidation)
 
 const verifyTaskAddress = async (req, res) => {
   try {
@@ -1713,32 +1703,23 @@ const verifyTaskAddress = async (req, res) => {
 
     const submittedCoords = task.feedback.geoMapping;
 
-    // Step 1: Geocode the verificationAddress to get actual coordinates
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY; // put in .env
-    const geoRes = await axios.get(
-      `https://maps.googleapis.com/maps/api/geocode/json`,
-      {
-        params: {
-          address: `${task.verificationAddress} ${task.city}, ${task.state}, Nigeria`,
-          key: apiKey,
-        },
-      }
-    );
-
-    if (!geoRes.data.results.length) {
+    const geocoded = await geocodeAddress(buildGeocodeAddress(task));
+    if (!geocoded.ok) {
       return res.status(400).json({
         success: false,
-        message: "Unable to geocode verification address",
+        message:
+          geocoded.reason === "MISSING_API_KEY"
+            ? "GOOGLE_MAPS_API_KEY is not configured"
+            : "Unable to geocode verification address",
       });
     }
 
-    const addressCoords = geoRes.data.results[0].geometry.location; // { lat, lng }
+    const addressCoords = geocoded.coords;
 
     // Step 2: Calculate distance
     const distance = getDistanceInMeters(submittedCoords, addressCoords);
 
-    // Define radius threshold (e.g., 100 meters)
-    const threshold = 100;
+    const threshold = MAX_DISTANCE_METERS;
 
     const isMatch = distance <= threshold;
 

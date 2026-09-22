@@ -7,7 +7,12 @@ const { submitTaskSchema } = require("../util/validationSchemas");
 const { generateTaskPDF, uploadPDFToCloudinary } = require("../service/pdfService")
 const mongoose = require("mongoose")
 const fs = require("fs");
-
+const XLSX = require("xlsx");
+const {
+  buildAgentTaskExportRows,
+  buildAgentReportExportRows,
+} = require("../util/agentExcelExport");
+const { validateSubmitLocation } = require("../util/geoValidation");
 
 const updateAgentProfile = async (req, res) => {
   try {
@@ -99,23 +104,31 @@ const getTasks = async (req, res) => {
     const allowedStatuses = statusMap[statusFilter] || statusMap["all"];
 
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const rawLimit = req.query.limit;
+    const fetchAll =
+      String(rawLimit || "").trim().toLowerCase() === "all" ||
+      Number(rawLimit) === -1;
+    const limit = fetchAll ? 0 : parseInt(rawLimit) || 20;
+    const skip = fetchAll ? 0 : (page - 1) * limit;
+
+    let tasksQuery = Task.find({ agentId, status: { $in: allowedStatuses } })
+      .populate("clientId", "companyName email")
+      .sort({ createdAt: -1 });
+
+    if (!fetchAll) {
+      tasksQuery = tasksQuery.skip(skip).limit(limit);
+    }
 
     const [tasks, total] = await Promise.all([
-      Task.find({ agentId, status: { $in: allowedStatuses } })
-        .populate("clientId", "companyName email")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      Task.countDocuments({ agentId, status: { $in: allowedStatuses } })
+      tasksQuery,
+      Task.countDocuments({ agentId, status: { $in: allowedStatuses } }),
     ]);
 
     res.status(200).json({
       success: true,
       message: `${statusFilter} tasks fetched successfully`,
-      currentPage: page,
-      totalPages: Math.ceil(total / limit),
+      currentPage: fetchAll ? 1 : page,
+      totalPages: fetchAll ? 1 : Math.ceil(total / limit) || 1,
       totalTasks: total,
       data: tasks
     });
@@ -175,6 +188,47 @@ const submitTask = async (req, res) => {
       return res.status(403).json({ success: false, message: "This Task is already submitted" });
     }
 
+    const {
+      lat,
+      lng,
+      visitDate,
+      accuracy,
+      isMocked,
+      locationCapturedAt,
+      ...rest
+    } = value;
+
+    const locationCheck = await validateSubmitLocation({
+      lat,
+      lng,
+      accuracy,
+      isMocked,
+      task,
+    });
+
+    if (!locationCheck.ok) {
+      const cleanupFiles = [];
+      if (req.files?.geotaggedImages) {
+        cleanupFiles.push(...req.files.geotaggedImages.map((f) => f.path));
+      }
+      if (req.files?.recordedAudio?.[0]) {
+        cleanupFiles.push(req.files.recordedAudio[0].path);
+      }
+      if (req.files?.recordedVideo?.[0]) {
+        cleanupFiles.push(req.files.recordedVideo[0].path);
+      }
+      await Promise.all(
+        cleanupFiles.map((path) => fs.promises.unlink(path).catch(() => {}))
+      );
+
+      return res.status(locationCheck.statusCode || 400).json({
+        success: false,
+        code: locationCheck.code,
+        message: locationCheck.message,
+        locationCheck: locationCheck.meta,
+      });
+    }
+
     const media = {
       geotaggedImages: [],
       recordedAudio: "",
@@ -212,17 +266,26 @@ const submitTask = async (req, res) => {
       media.recordedVideo = url;
     }
 
-    // Prepare feedback object
-    const { lat, lng, visitDate, ...rest } = value;
     task.feedback = {
       ...rest,
-      geoMapping: { lat, lng },
+      geoMapping: {
+        lat,
+        lng,
+        accuracy: accuracy ?? null,
+        isMocked: Boolean(isMocked),
+        capturedAt: locationCapturedAt || new Date(),
+        distanceFromAddressMeters:
+          locationCheck.meta?.distanceInMeters ?? null,
+        addressCoords: locationCheck.meta?.addressCoords || undefined,
+        needsManualReview: Boolean(locationCheck.meta?.needsManualReview),
+      },
       geotaggedImages: media.geotaggedImages,
       recordedAudio: media.recordedAudio,
       recordedVideo: media.recordedVideo,
     };
 
     task.visitDate = visitDate;
+    task.taskSubmissionDate = new Date();
    // Generate & upload PDF report
     const pdfBuffer = await generateTaskPDF(task); 
 
@@ -722,6 +785,86 @@ const getMonthlyTaskStats = async (req, res) => {
   }
 };
 
+const exportMyTasksExcel = async (req, res) => {
+  try {
+    const agentId = req.user.id;
+    const statusFilter = req.query.statusFilter || "all";
+
+    const statusMap = {
+      assigned: ["assigned", "over-due"],
+      inProgress: ["in-progress"],
+      completed: ["completed"],
+      overDue: ["over-due"],
+      incomplete: ["incomplete"],
+      all: ["assigned", "completed", "in-progress", "over-due", "incomplete"],
+    };
+
+    if (!statusMap[statusFilter]) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid statusFilter.",
+      });
+    }
+
+    const tasks = await Task.find({
+      agentId,
+      status: { $in: statusMap[statusFilter] },
+    })
+      .populate("clientId", "companyName")
+      .sort({ createdAt: -1 });
+
+    const rows = buildAgentTaskExportRows(tasks);
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Tasks");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="agent-tasks-${statusFilter}.xlsx"`
+    );
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Export agent tasks error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const exportMyReportsExcel = async (req, res) => {
+  try {
+    const agentId = req.user.id;
+    const tasks = await Task.find({
+      agentId,
+      "feedback.reportUrl": { $ne: null },
+    })
+      .populate("clientId", "companyName")
+      .sort({ createdAt: -1 });
+
+    const rows = buildAgentReportExportRows(tasks);
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reports");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="agent-reports.xlsx"'
+    );
+    return res.send(buffer);
+  } catch (err) {
+    console.error("Export agent reports error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 
 module.exports = {
     updateAgentProfile,
@@ -737,4 +880,6 @@ module.exports = {
     getAllNotifications,
     getTaskHistory,
     getMonthlyTaskStats,
+    exportMyTasksExcel,
+    exportMyReportsExcel,
 }

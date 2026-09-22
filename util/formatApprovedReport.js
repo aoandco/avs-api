@@ -11,6 +11,8 @@ function formatApprovedReportTask(task) {
     createdAt,
     reportIsApproved,
     taskUploadId,
+    visitDate,
+    taskSubmissionDate,
     feedback = {},
   } = task;
 
@@ -64,6 +66,8 @@ function formatApprovedReportTask(task) {
     postalCode: address?.postalCode,
     status,
     createdAt,
+    visitDate,
+    taskSubmissionDate,
     reportIsApproved,
     taskUploadId: upload?._id || taskUploadId || null,
     uploadFileName: upload?.fileName || null,
@@ -106,6 +110,8 @@ const APPROVED_REPORT_TASK_SELECT = `
   city
   status
   createdAt
+  visitDate
+  taskSubmissionDate
   reportIsApproved
   taskUploadId
   feedback.addressExistence
