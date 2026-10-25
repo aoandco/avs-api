@@ -89,6 +89,13 @@ async function pushTaskResultToClient(task, client, options = {}) {
   }
 
   const addressMedia = await buildAddressMedia(task);
+  if (addressMedia.length === 0) {
+    const message =
+      "Report media could not be prepared for Wema. Check that the report photos are accessible and within the configured media size limit, then retry approval.";
+    throw Object.assign(new Error(message), {
+      pushError: { message, status: 400, code: "MISSING_ADDRESS_MEDIA" },
+    });
+  }
   const address = buildAddressString(task);
 
   if (!address) {
@@ -123,15 +130,12 @@ async function pushTaskResultToClient(task, client, options = {}) {
       toIsoDate(task.feedback?.receivedDate) ?? toIsoDate(createdAtFallback),
     metOthers: task.feedback?.personMetOthers === "Yes",
     verificationStatus: mapVerificationStatus(task),
-    addressMedia:
-      addressMedia.length > 0
-        ? addressMedia.map((item) => ({
+    addressMedia: addressMedia.map((item) => ({
             fileName: item.fileName,
             contentType: item.contentType,
             contentBase64: item.contentBase64,
             mediaType: item.mediaType,
-          }))
-        : undefined,
+          })),
     reportUrl: task.feedback?.reportUrl || undefined,
   });
 

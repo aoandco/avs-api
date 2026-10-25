@@ -4,8 +4,11 @@ const path = require("path");
 const { isReturnedVerificationTask } = require("./verificationStatus");
 
 const IMAGE_FETCH_TIMEOUT_MS = 30000;
-// ~500KB base64 keeps payload under typical gateway limits; full images go via reportUrl
-const MAX_BASE64_LENGTH = Number(process.env.PUSH_MEDIA_MAX_BASE64_LENGTH) || 500000;
+// Match the existing 10 MiB download limit. Normal camera photos often exceed
+// 500 KB after Base64 encoding and must not be silently removed from reports.
+const MAX_BASE64_LENGTH =
+  Number(process.env.PUSH_MEDIA_MAX_BASE64_LENGTH) || Math.ceil(10 * 1024 * 1024 / 3) * 4;
+const MAX_VIDEO_BASE64_LENGTH = Number(process.env.PUSH_MEDIA_MAX_BASE64_LENGTH) || 500000;
 const COMPANY_LOGO_PATH = path.join(__dirname, "../assets/aoco_logo.jpeg");
 
 async function urlToBase64(url) {
@@ -70,7 +73,7 @@ async function buildAddressMedia(task) {
   if (task.feedback?.recordedVideo) {
     try {
       const contentBase64 = await urlToBase64(task.feedback.recordedVideo);
-      if (contentBase64.length <= MAX_BASE64_LENGTH) {
+      if (contentBase64.length <= MAX_VIDEO_BASE64_LENGTH) {
         media.push({
           fileName: "video.mp4",
           contentType: "video/mp4",
