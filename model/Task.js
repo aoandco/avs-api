@@ -36,8 +36,7 @@ const taskSchema = new mongoose.Schema({
     unique: true
   },
   cif: {
-    type: String,
-    unique: true
+    type: String
   },
   customerName: {
     type: String,
@@ -126,5 +125,15 @@ reportIsApproved:{type:Boolean , default:false},
 
 
 });
+
+// CIF is optional. Only supplied string values must be unique.
+taskSchema.index(
+  { cif: 1 },
+  {
+    name: "cif_unique_strings",
+    unique: true,
+    partialFilterExpression: { cif: { $type: "string" } }
+  }
+);
 
 module.exports = mongoose.model("Task", taskSchema);
