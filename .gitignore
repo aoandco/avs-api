@@ -3,3 +3,5 @@ node_modules
 ao-co-web/
 ao-co-mobile/
 payload-logs/
+tmp/
+scripts/

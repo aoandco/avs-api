@@ -317,22 +317,32 @@ const assignTask = async (req, res) => {
         continue;
       }
 
-      // if (task.status === "completed") {
-      //   skippedTasks.push({ taskId: id, reason: "Completed tasks cannot be reassigned" });
-      //   continue;
-      // }
+      if (task.status === "completed") {
+        skippedTasks.push({ taskId: id, reason: "Completed tasks cannot be reassigned" });
+        continue;
+      }
 
       const wasAssignedBefore = task.status !== "pending" || task.agentId;
 
-      task.agentId = agent._id;
-      task.status = "assigned";
-      task.assignedDate = now;
-      task.taskSubmissionDate = taskSubmissionDeadline;
-      await task.save();
+      // Check the status in the write too: submission may finish after the read.
+      const assignedTask = await Task.findOneAndUpdate(
+        { _id: taskObjectId, status: { $ne: "completed" } },
+        { $set: {
+          agentId: agent._id,
+          status: "assigned",
+          assignedDate: now,
+          taskSubmissionDate: taskSubmissionDeadline,
+        } },
+        { new: true, runValidators: true }
+      );
+      if (!assignedTask) {
+        skippedTasks.push({ taskId: id, reason: "Task is completed or no longer exists" });
+        continue;
+      }
 
-      assignedTasks.push(task);
+      assignedTasks.push(assignedTask);
       if (wasAssignedBefore) {
-        reassignedTasks.push(task);
+        reassignedTasks.push(assignedTask);
       }
     }
 
@@ -378,15 +388,21 @@ const assignTasksToAgent = async (req, res) => {
 
     // Update task assignment
     const now = new Date();
-    for (let task of tasks) {
-      task.agentId = agent._id;
-      task.status = "assigned";
-      task.assignedDate = now;
-      await task.save();
+    const assignedTasks = [];
+    for (const task of tasks) {
+      const assignedTask = await Task.findOneAndUpdate(
+        { _id: task._id, status: "pending" },
+        { $set: { agentId: agent._id, status: "assigned", assignedDate: now } },
+        { new: true, runValidators: true }
+      );
+      if (assignedTask) assignedTasks.push(assignedTask);
+    }
+    if (assignedTasks.length === 0) {
+      return res.status(404).json({ success: false, message: "No valid pending tasks found" });
     }
 
     // === Create Excel Sheet ===
-    const sheetData = tasks.map(task => ({
+    const sheetData = assignedTasks.map(task => ({
       "Activity ID": task.activityId,
       "Customer Name": task.customerName,
       "Verification Address": task.verificationAddress,
@@ -411,12 +427,12 @@ const assignTasksToAgent = async (req, res) => {
     await fs.unlink(tempPath); // Cleanup
 
     // === Send Email ===
-    await sendEmail.sendAssignedTasks(agent.email, agent.fullName, tasks.length, cloudResult.secure_url,)
+    await sendEmail.sendAssignedTasks(agent.email, agent.fullName, assignedTasks.length, cloudResult.secure_url,)
 
     res.status(200).json({
       success: true,
-      message: `${tasks.length} task(s) assigned to agent successfully and email sent`,
-      data: tasks
+      message: `${assignedTasks.length} task(s) assigned to agent successfully and email sent`,
+      data: assignedTasks
     });
   } catch (err) {
     console.error("Assign tasks error:", err);
