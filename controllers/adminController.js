@@ -317,26 +317,33 @@ const assignTask = async (req, res) => {
         continue;
       }
 
-      if (task.status === "completed") {
-        skippedTasks.push({ taskId: id, reason: "Completed tasks cannot be reassigned" });
-        continue;
-      }
-
+      const reopeningCompletedTask = task.status === "completed";
       const wasAssignedBefore = task.status !== "pending" || task.agentId;
 
-      // Check the status in the write too: submission may finish after the read.
+      // Reopen only the completed assignment the admin selected. Ordinary
+      // assignment must still not race with an agent completing a task.
+      const assignmentFilter = reopeningCompletedTask
+        ? { _id: taskObjectId, status: "completed", agentId: task.agentId }
+        : { _id: taskObjectId, status: { $ne: "completed" } };
+      const assignmentUpdate = { $set: {
+        agentId: agent._id,
+        status: "assigned",
+        assignedDate: now,
+        taskSubmissionDate: taskSubmissionDeadline,
+      } };
+      if (reopeningCompletedTask) {
+        assignmentUpdate.$set.reportIsApproved = false;
+        // Keep the previous feedback and evidence available for correction,
+        // but require a newly generated report on the next submission.
+        assignmentUpdate.$unset = { "feedback.reportUrl": "" };
+      }
       const assignedTask = await Task.findOneAndUpdate(
-        { _id: taskObjectId, status: { $ne: "completed" } },
-        { $set: {
-          agentId: agent._id,
-          status: "assigned",
-          assignedDate: now,
-          taskSubmissionDate: taskSubmissionDeadline,
-        } },
+        assignmentFilter,
+        assignmentUpdate,
         { new: true, runValidators: true }
       );
       if (!assignedTask) {
-        skippedTasks.push({ taskId: id, reason: "Task is completed or no longer exists" });
+        skippedTasks.push({ taskId: id, reason: "Task assignment changed or task no longer exists" });
         continue;
       }
 

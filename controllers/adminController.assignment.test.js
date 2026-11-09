@@ -24,19 +24,50 @@ function response() {
 }
 const request = () => ({ params: { agentId: String(agentId) }, body: { taskIds: [String(taskId)] } });
 
-test('completed tasks are skipped without changing their owner, dates or feedback', async () => {
-  const task = { _id: taskId, status: 'completed', agentId, feedback: { reportUrl: 'saved-report' } };
-  const before = JSON.stringify(task);
-  const controller = load({ findById: async () => task, findOneAndUpdate: async () => assert.fail('Completed task must not be written') });
+for (const sameAgent of [true, false]) {
+  test(`completed task can be reopened for ${sameAgent ? 'the submitting' : 'another'} agent`, async () => {
+    const previousAgent = sameAgent ? agentId : new mongoose.Types.ObjectId();
+    const feedback = { comments: 'Existing feedback', geotaggedImages: ['existing-image'], reportUrl: 'old-report' };
+    const task = { _id: taskId, status: 'completed', agentId: previousAgent, feedback, reportIsApproved: true };
+    const controller = load({
+      findById: async () => task,
+      findOneAndUpdate: async (filter, update, options) => {
+        assert.equal(filter.status, 'completed');
+        assert.equal(String(filter.agentId), String(previousAgent));
+        assert.equal(String(update.$set.agentId), String(agentId));
+        assert.equal(update.$set.status, 'assigned');
+        assert.equal(update.$set.reportIsApproved, false);
+        assert.equal(update.$set.taskSubmissionDate - update.$set.assignedDate, 172800000);
+        assert.equal(update.$unset['feedback.reportUrl'], '');
+        assert.equal(update.$set.feedback, undefined);
+        assert.equal(options.runValidators, true);
+        return { ...task, ...update.$set };
+      },
+    });
+    const res = response();
+    await controller.assignTask(request(), res);
+    assert.equal(res.code, 200);
+    assert.equal(res.body.data.assigned, 1);
+    assert.equal(res.body.data.reassigned, 1);
+    assert.equal(res.body.data.skipped, 0);
+    assert.equal(res.body.data.assignedTasks[0].feedback, feedback);
+  });
+}
+
+test('completed reassignment is skipped if its status or owner changes concurrently', async () => {
+  const controller = load({
+    findById: async () => ({ _id: taskId, status: 'completed', agentId }),
+    findOneAndUpdate: async (filter) => {
+      assert.equal(filter.status, 'completed');
+      assert.equal(filter.agentId, agentId);
+      return null;
+    },
+  });
   const res = response();
   await controller.assignTask(request(), res);
-  assert.equal(res.code, 200);
   assert.equal(res.body.data.assigned, 0);
   assert.equal(res.body.data.skipped, 1);
-  assert.match(res.body.data.skippedTasks[0].reason, /Completed/);
-  assert.equal(JSON.stringify(task), before);
 });
-
 test('assignment cannot reopen a task completed between reading and writing', async () => {
   let status = 'pending';
   const controller = load({
