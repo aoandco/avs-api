@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": ".gitignore.js",
   "scripts": {
+    "db:repair-task-cif-index": "node util/repairTaskCifIndex.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon server.js"
   },

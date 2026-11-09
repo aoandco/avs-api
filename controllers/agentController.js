@@ -13,6 +13,8 @@ const {
   buildAgentReportExportRows,
 } = require("../util/agentExcelExport");
 const { validateSubmitLocation } = require("../util/geoValidation");
+const { buildAgentTaskFilters, escape: escapeTaskSearch } = require("../util/agentTaskFilters");
+const Client = require("../model/Client");
 
 const updateAgentProfile = async (req, res) => {
   try {
@@ -103,17 +105,31 @@ const getTasks = async (req, res) => {
 
     const allowedStatuses = statusMap[statusFilter] || statusMap["all"];
 
-    const page = parseInt(req.query.page) || 1;
+    let taskFilters;
+    try {
+      taskFilters = buildAgentTaskFilters(req.query);
+    } catch (error) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    const page = Number(req.query.page || 1);
     const rawLimit = req.query.limit;
     const fetchAll =
       String(rawLimit || "").trim().toLowerCase() === "all" ||
       Number(rawLimit) === -1;
-    const limit = fetchAll ? 0 : parseInt(rawLimit) || 20;
+    const limit = fetchAll ? 0 : Number(rawLimit || 20);
+    if (!Number.isInteger(page) || page < 1 || (!fetchAll && (!Number.isInteger(limit) || limit < 1 || limit > 100))) {
+      return res.status(400).json({ success: false, message: "Invalid pagination: page must be positive and limit must be 1–100 or all" });
+    }
     const skip = fetchAll ? 0 : (page - 1) * limit;
 
-    let tasksQuery = Task.find({ agentId, status: { $in: allowedStatuses } })
+    const filter = { ...taskFilters.filter, agentId, status: { $in: allowedStatuses } };
+    if (taskFilters.company) {
+      const clients = await Client.find({ companyName: { $regex: escapeTaskSearch(taskFilters.company), $options: "i" } }).distinct("_id");
+      filter.clientId = { $in: clients };
+    }
+    let tasksQuery = Task.find(filter)
       .populate("clientId", "companyName email")
-      .sort({ createdAt: -1 });
+      .sort(taskFilters.sort);
 
     if (!fetchAll) {
       tasksQuery = tasksQuery.skip(skip).limit(limit);
@@ -121,7 +137,7 @@ const getTasks = async (req, res) => {
 
     const [tasks, total] = await Promise.all([
       tasksQuery,
-      Task.countDocuments({ agentId, status: { $in: allowedStatuses } }),
+      Task.countDocuments(filter),
     ]);
 
     res.status(200).json({
