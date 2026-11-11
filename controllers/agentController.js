@@ -204,6 +204,18 @@ const submitTask = async (req, res) => {
       return res.status(403).json({ success: false, message: "This Task is already submitted" });
     }
 
+    if (!req.files?.geotaggedImages?.length && !req.files?.recordedVideo?.length) {
+      await Promise.all(
+        (req.files?.recordedAudio || []).map((file) =>
+          fs.promises.unlink(file.path).catch(() => {})
+        )
+      );
+      return res.status(400).json({
+        success: false,
+        message: "At least one image or video is required to submit a task.",
+      });
+    }
+
     const {
       lat,
       lng,
